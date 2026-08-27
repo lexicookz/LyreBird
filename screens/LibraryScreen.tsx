@@ -1,12 +1,12 @@
 // screens/LibraryScreen.tsx
 import React from 'react';
-import { View, Text, Image, FlatList, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, Image, FlatList, StyleSheet, SafeAreaView, Pressable } from 'react-native';
 import { mockVideos } from '../data/mockVideos';
 import { Video } from '../types';
 
-function VideoCard({ video }: { video: Video }) {
+function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (video: Video) => void }) {
   return (
-    <View style={styles.card}>
+    <Pressable style={styles.card} onPress={() => onSelectVideo(video)}>
       <Image source={{ uri: video.thumbnailUrl }} style={styles.thumbnail} />
       <View style={styles.cardBody}>
         <Text style={styles.title} numberOfLines={2}>{video.title}</Text>
@@ -19,18 +19,18 @@ function VideoCard({ video }: { video: Video }) {
           ))}
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-export default function LibraryScreen() {
+export default function LibraryScreen({ onSelectVideo }: { onSelectVideo: (video: Video) => void }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <Text style={styles.header}>Library</Text>
       <FlatList
         data={mockVideos}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <VideoCard video={item} />}
+        renderItem={({ item }) => <VideoCard video={item} onSelectVideo={onSelectVideo} />}
         contentContainerStyle={styles.listContent}
       />
     </SafeAreaView>
