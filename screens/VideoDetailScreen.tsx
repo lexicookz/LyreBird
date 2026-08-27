@@ -12,13 +12,24 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-export default function VideoDetailScreen({ video, onBack }: { video: Video; onBack: () => void }) {
+export default function VideoDetailScreen({
+  video,
+  onBack,
+  onViewBrief,
+}: {
+  video: Video;
+  onBack: () => void;
+  onViewBrief: () => void;
+}) {
   const isReady = video.status === 'ready';
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <Pressable onPress={onBack} style={styles.backButton}>
         <Text style={styles.backText}>← Back</Text>
+      </Pressable>
+      <Pressable onPress={onViewBrief} style={styles.backButton}>
+        <Text style={styles.briefButtonText}>View / Edit Brief</Text>
       </Pressable>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Image source={{ uri: video.thumbnailUrl }} style={styles.hero} />
@@ -100,6 +111,11 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 16,
+    color: '#222',
+  },
+  briefButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
     color: '#222',
   },
   scrollContent: {
