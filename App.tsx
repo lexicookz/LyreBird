@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import LibraryScreen from './screens/LibraryScreen';
 import VideoDetailScreen from './screens/VideoDetailScreen';
 import BriefScreen from './screens/BriefScreen';
-import { mockBriefs } from './data/mockVideos';
+import BrandProfileScreen from './screens/BrandProfileScreen';
+import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video } from './types';
 
-type Screen = 'library' | 'detail' | 'brief';
+type Screen = 'library' | 'detail' | 'brief' | 'brandProfile';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('library');
@@ -29,6 +30,19 @@ export default function App() {
     setScreen('detail');
   }
 
+  function handleOpenBrandProfile() {
+    setScreen('brandProfile');
+  }
+
+  if (screen === 'brandProfile') {
+    return (
+      <BrandProfileScreen
+        existingProfile={mockBrandProfile}
+        onBack={handleBackToLibrary}
+      />
+    );
+  }
+
   if (screen === 'brief' && selectedVideo) {
     const existingBrief = mockBriefs.find((b) => b.videoId === selectedVideo.id);
     return (
@@ -50,5 +64,10 @@ export default function App() {
     );
   }
 
-  return <LibraryScreen onSelectVideo={handleSelectVideo} />;
+  return (
+    <LibraryScreen
+      onSelectVideo={handleSelectVideo}
+      onOpenBrandProfile={handleOpenBrandProfile}
+    />
+  );
 }
