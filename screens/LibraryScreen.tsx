@@ -22,11 +22,15 @@ function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (vid
     </Pressable>
   );
 }
-
-export default function LibraryScreen({ onSelectVideo }: { onSelectVideo: (video: Video) => void }) {
+export default function LibraryScreen({ onSelectVideo, onOpenBrandProfile }: { onSelectVideo: (video: Video) => void; onOpenBrandProfile: () => void }) {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <Text style={styles.header}>Library</Text>
+            <View style={styles.headerRow}>
+        <Text style={styles.header}>Library</Text>
+        <Pressable onPress={onOpenBrandProfile}>
+          <Text style={styles.brandProfileLink}>Brand Profile</Text>
+        </Pressable>
+      </View>
       <FlatList
         data={mockVideos}
         keyExtractor={(item) => item.id}
@@ -42,12 +46,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  header: {
-    fontSize: 28,
-    fontWeight: '700',
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 8,
+  },
+  header: {
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  brandProfileLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
   },
   listContent: {
     paddingHorizontal: 16,
