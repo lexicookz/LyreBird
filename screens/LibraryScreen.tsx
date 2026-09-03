@@ -22,14 +22,28 @@ function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (vid
     </Pressable>
   );
 }
-export default function LibraryScreen({ onSelectVideo, onOpenBrandProfile }: { onSelectVideo: (video: Video) => void; onOpenBrandProfile: () => void }) {
+
+export default function LibraryScreen({
+  onSelectVideo,
+  onOpenBrandProfile,
+  onOpenCalendar,
+}: {
+  onSelectVideo: (video: Video) => void;
+  onOpenBrandProfile: () => void;
+  onOpenCalendar: () => void;
+}) {
   return (
     <SafeAreaView style={styles.safeArea}>
-            <View style={styles.headerRow}>
+      <View style={styles.headerRow}>
         <Text style={styles.header}>Library</Text>
-        <Pressable onPress={onOpenBrandProfile}>
-          <Text style={styles.brandProfileLink}>Brand Profile</Text>
-        </Pressable>
+        <View style={styles.headerLinks}>
+          <Pressable onPress={onOpenCalendar}>
+            <Text style={styles.headerLink}>Calendar</Text>
+          </Pressable>
+          <Pressable onPress={onOpenBrandProfile}>
+            <Text style={styles.headerLink}>Brand Profile</Text>
+          </Pressable>
+        </View>
       </View>
       <FlatList
         data={mockVideos}
@@ -58,7 +72,11 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
   },
-  brandProfileLink: {
+  headerLinks: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  headerLink: {
     fontSize: 14,
     fontWeight: '600',
     color: '#007AFF',
