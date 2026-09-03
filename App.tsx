@@ -3,10 +3,11 @@ import LibraryScreen from './screens/LibraryScreen';
 import VideoDetailScreen from './screens/VideoDetailScreen';
 import BriefScreen from './screens/BriefScreen';
 import BrandProfileScreen from './screens/BrandProfileScreen';
+import CalendarScreen from './screens/CalendarScreen';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video } from './types';
 
-type Screen = 'library' | 'detail' | 'brief' | 'brandProfile';
+type Screen = 'library' | 'detail' | 'brief' | 'brandProfile' | 'calendar';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('library');
@@ -32,6 +33,14 @@ export default function App() {
 
   function handleOpenBrandProfile() {
     setScreen('brandProfile');
+  }
+
+  function handleOpenCalendar() {
+    setScreen('calendar');
+  }
+
+  if (screen === 'calendar') {
+    return <CalendarScreen onBack={handleBackToLibrary} />;
   }
 
   if (screen === 'brandProfile') {
@@ -68,6 +77,7 @@ export default function App() {
     <LibraryScreen
       onSelectVideo={handleSelectVideo}
       onOpenBrandProfile={handleOpenBrandProfile}
+      onOpenCalendar={handleOpenCalendar}
     />
   );
 }
