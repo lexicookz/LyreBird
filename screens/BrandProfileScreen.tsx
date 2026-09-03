@@ -1,0 +1,152 @@
+// screens/BrandProfileScreen.tsx
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  Pressable,
+  StyleSheet,
+  SafeAreaView,
+} from 'react-native';
+import { BrandProfile } from '../types';
+
+function Field({
+  label,
+  value,
+  onChangeText,
+  multiline = false,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  multiline?: boolean;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[styles.input, multiline && styles.inputMultiline]}
+        value={value}
+        onChangeText={onChangeText}
+        multiline={multiline}
+        placeholder={`Enter ${label.toLowerCase()}...`}
+        placeholderTextColor="#aaa"
+      />
+    </View>
+  );
+}
+
+export default function BrandProfileScreen({
+  existingProfile,
+  onBack,
+}: {
+  existingProfile?: BrandProfile;
+  onBack: () => void;
+}) {
+  const [product, setProduct] = useState(existingProfile?.product ?? '');
+  const [audience, setAudience] = useState(existingProfile?.audience ?? '');
+  const [tone, setTone] = useState(existingProfile?.tone ?? '');
+  const [saved, setSaved] = useState(false);
+
+  function handleSave() {
+    console.log('Saving brand profile (mock):', { product, audience, tone });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.headerRow}>
+        <Pressable onPress={onBack} hitSlop={10}>
+          <Text style={styles.backButton}>← Back</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>Brand Profile</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.helperText}>
+          This shapes how AI-generated briefs sound and what they focus on for your brand.
+        </Text>
+
+        <Field label="Product" value={product} onChangeText={setProduct} multiline />
+        <Field label="Audience" value={audience} onChangeText={setAudience} multiline />
+        <Field label="Tone" value={tone} onChangeText={setTone} multiline />
+
+        <Pressable style={styles.saveButton} onPress={handleSave}>
+          <Text style={styles.saveButtonText}>{saved ? 'Saved ✓' : 'Save Profile'}</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  backButton: {
+    fontSize: 15,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+  },
+  helperText: {
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  field: {
+    marginBottom: 18,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#999',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#222',
+    backgroundColor: '#fafafa',
+  },
+  inputMultiline: {
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  saveButton: {
+    backgroundColor: '#111',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+});
