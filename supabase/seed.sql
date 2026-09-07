@@ -1,0 +1,9 @@
+-- ============================================================
+-- Seed data for local development.
+--
+-- Runs after all migrations on `supabase db reset`. Local only — never rely on
+-- this for hosted environments.
+--
+-- Note that rows in public.profiles are created by the on_auth_user_created
+-- trigger, so create auth users first and hang brands/clips off their ids.
+-- ============================================================

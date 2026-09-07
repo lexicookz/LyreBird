@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+supabase
+google-genai
+pydantic
+pydantic-settings
+python-multipart
+httpx

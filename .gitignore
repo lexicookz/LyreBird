@@ -39,3 +39,14 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Python / worker
+.env
+__pycache__/
+*.pyc
+.venv/
+.env.*
+!.env.example
+
+# Supabase CLI scratch state
+supabase/.temp/
