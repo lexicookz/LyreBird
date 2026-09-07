@@ -6,7 +6,7 @@ project_id = "lyrebird"
 [api]
 enabled = true
 port = 54321
-schemas = ["public", "storage"]
+schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
@@ -21,7 +21,7 @@ port = 54323
 
 # Catches outbound mail locally so signup/confirmation flows can be tested
 # without sending anything.
-[inbucket]
+[local_smtp]
 enabled = true
 port = 54324
 
