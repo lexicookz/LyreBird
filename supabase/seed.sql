@@ -100,9 +100,17 @@ on conflict (id) do nothing;
 -- ---------- clips ----------
 -- Storage path convention is <user_id>/<filename>; see CLAUDE.md.
 
+-- status mirrors reality here: the three clips that have an analysis row are
+-- 'ready', the other two are mid-pipeline and failed respectively, so the
+-- library screen has all three states to render.
+--
+-- thumbnail_url carries a directly renderable image because no files have been
+-- uploaded to the private thumbnails bucket yet. thumbnail_path is still set to
+-- the path those files will occupy once upload works.
+
 insert into public.clips (
-  id, owner_id, recording_id, storage_path, thumbnail_path,
-  title, tags, duration_seconds, position_in_parent
+  id, owner_id, recording_id, storage_path, thumbnail_path, thumbnail_url,
+  title, tags, duration_seconds, position_in_parent, status
 )
 values
   ('44444444-0000-4000-8000-000000000001',
@@ -110,40 +118,45 @@ values
    '33333333-0000-4000-8000-000000000001',
    '11111111-1111-1111-1111-111111111111/clip-barrier-hook.mp4',
    '11111111-1111-1111-1111-111111111111/clip-barrier-hook.jpg',
+   'https://picsum.photos/seed/lyrebird-clip1/400/700',
    'Barrier repair explained in 20 seconds',
-   '{skincare,education,hook}', 21.4, 1),
+   '{skincare,education,hook}', 21.4, 1, 'ready'),
 
   ('44444444-0000-4000-8000-000000000002',
    '11111111-1111-1111-1111-111111111111',
    '33333333-0000-4000-8000-000000000001',
    '11111111-1111-1111-1111-111111111111/clip-routine-teardown.mp4',
    '11111111-1111-1111-1111-111111111111/clip-routine-teardown.jpg',
+   'https://picsum.photos/seed/lyrebird-clip2/400/700',
    'Why your 10-step routine stopped working',
-   '{skincare,problem_agitate_solve,ugc}', 34.9, 2),
+   '{skincare,problem_agitate_solve,ugc}', 34.9, 2, 'processing'),
 
   ('44444444-0000-4000-8000-000000000003',
    '11111111-1111-1111-1111-111111111111',
    '33333333-0000-4000-8000-000000000001',
    '11111111-1111-1111-1111-111111111111/clip-founder-answer.mp4',
    '11111111-1111-1111-1111-111111111111/clip-founder-answer.jpg',
+   'https://picsum.photos/seed/lyrebird-clip3/400/700',
    'Founder answers the fragrance question',
-   '{skincare,founder_pov,faq}', 47.2, 3),
+   '{skincare,founder_pov,faq}', 47.2, 3, 'ready'),
 
   ('44444444-0000-4000-8000-000000000004',
    '11111111-1111-1111-1111-111111111111',
    null,
    '11111111-1111-1111-1111-111111111111/clip-grinder-myth.mp4',
    '11111111-1111-1111-1111-111111111111/clip-grinder-myth.jpg',
+   'https://picsum.photos/seed/lyrebird-clip4/400/700',
    'The grinder myth that wastes your beans',
-   '{coffee,education,myth_busting}', 28.7, null),
+   '{coffee,education,myth_busting}', 28.7, null, 'ready'),
 
   ('44444444-0000-4000-8000-000000000005',
    '11111111-1111-1111-1111-111111111111',
    null,
    '11111111-1111-1111-1111-111111111111/clip-roast-date.mp4',
    '11111111-1111-1111-1111-111111111111/clip-roast-date.jpg',
+   'https://picsum.photos/seed/lyrebird-clip5/400/700',
    'Read the roast date, not the best-before',
-   '{coffee,ugc,retention}', 19.8, null)
+   '{coffee,ugc,retention}', 19.8, null, 'failed')
 on conflict (id) do nothing;
 
 
@@ -226,7 +239,7 @@ on conflict (id) do nothing;
 
 insert into public.briefs (
   id, owner_id, clip_id, brand_id, analysis_id,
-  hook, script, shot_list, caption, hashtags, status
+  hook, script, shot_list, caption, cta, hashtags, status
 )
 values
   ('66666666-0000-4000-8000-000000000001',
@@ -243,6 +256,7 @@ values
       {"shot": 4, "duration_s": 6.5, "framing": "Talking head, leaning in", "note": "Deliver CTA flat, do not smile"}
     ]'::jsonb,
    'Ten days. No acids, no scrubs, ceramides only. Then tell me it is still dry.',
+   'Save this and come back in ten days.',
    '{barrierrepair,fragrancefree,sensitiveskin,skincaretruth}',
    'draft'),
 
@@ -260,6 +274,7 @@ values
       {"shot": 4, "duration_s": 6.0, "framing": "Overhead pour", "note": "CTA over the pour, no on-screen text"}
     ]'::jsonb,
    'Roast date or it did not happen. Go check your cupboard, I will wait.',
+   'Go check the bag in your cupboard right now.',
    '{specialtycoffee,roastdate,pourover,coffeetok}',
    'scheduled')
 on conflict (id) do nothing;

@@ -135,6 +135,7 @@ export type Database = {
           caption: string | null
           clip_id: string
           created_at: string
+          cta: string | null
           hashtags: string[]
           hook: string | null
           id: string
@@ -150,6 +151,7 @@ export type Database = {
           caption?: string | null
           clip_id: string
           created_at?: string
+          cta?: string | null
           hashtags?: string[]
           hook?: string | null
           id?: string
@@ -165,6 +167,7 @@ export type Database = {
           caption?: string | null
           clip_id?: string
           created_at?: string
+          cta?: string | null
           hashtags?: string[]
           hook?: string | null
           id?: string
@@ -261,9 +264,11 @@ export type Database = {
           owner_id: string
           position_in_parent: number | null
           recording_id: string | null
+          status: string
           storage_path: string
           tags: string[]
           thumbnail_path: string | null
+          thumbnail_url: string | null
           title: string | null
           updated_at: string
         }
@@ -274,9 +279,11 @@ export type Database = {
           owner_id: string
           position_in_parent?: number | null
           recording_id?: string | null
+          status?: string
           storage_path: string
           tags?: string[]
           thumbnail_path?: string | null
+          thumbnail_url?: string | null
           title?: string | null
           updated_at?: string
         }
@@ -287,9 +294,11 @@ export type Database = {
           owner_id?: string
           position_in_parent?: number | null
           recording_id?: string | null
+          status?: string
           storage_path?: string
           tags?: string[]
           thumbnail_path?: string | null
+          thumbnail_url?: string | null
           title?: string | null
           updated_at?: string
         }
