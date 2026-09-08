@@ -44,9 +44,9 @@ export default function BrandProfileScreen({
   existingProfile?: BrandProfile;
   onBack: () => void;
 }) {
-  const [product, setProduct] = useState(existingProfile?.product ?? '');
-  const [audience, setAudience] = useState(existingProfile?.audience ?? '');
-  const [tone, setTone] = useState(existingProfile?.tone ?? '');
+  const [product, setProduct] = useState(existingProfile?.product_summary ?? '');
+  const [audience, setAudience] = useState(existingProfile?.target_audience ?? '');
+  const [tone, setTone] = useState(existingProfile?.tone_of_voice ?? '');
   const [saved, setSaved] = useState(false);
 
   function handleSave() {
