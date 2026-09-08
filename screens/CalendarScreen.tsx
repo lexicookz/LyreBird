@@ -1,7 +1,7 @@
 // screens/CalendarScreen.tsx
 import React from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, SafeAreaView } from 'react-native';
-import { mockBriefs, mockVideos } from '../data/mockVideos';
+import { mockBriefs, mockCalendarEntries, mockClips } from '../data/mockVideos';
 import { Brief } from '../types';
 
 function formatDate(iso: string) {
@@ -14,13 +14,13 @@ function formatDate(iso: string) {
 }
 
 function BriefRow({ brief }: { brief: Brief }) {
-  const video = mockVideos.find((v) => v.id === brief.videoId);
+  const clip = mockClips.find((c) => c.id === brief.clip_id);
   return (
     <View style={styles.row}>
       <Text style={styles.rowHook} numberOfLines={1}>{brief.hook}</Text>
-      {video && (
+      {clip && (
         <Text style={styles.rowSource} numberOfLines={1}>
-          From: {video.title}
+          From: {clip.title}
         </Text>
       )}
     </View>
@@ -28,14 +28,15 @@ function BriefRow({ brief }: { brief: Brief }) {
 }
 
 export default function CalendarScreen({ onBack }: { onBack: () => void }) {
-  const scheduled = mockBriefs.filter((b) => b.scheduledDate);
-  const unscheduled = mockBriefs.filter((b) => !b.scheduledDate);
+  const scheduledIds = new Set(mockCalendarEntries.map((e) => e.brief_id));
+  const unscheduled = mockBriefs.filter((b) => !scheduledIds.has(b.id));
 
   const grouped: Record<string, Brief[]> = {};
-  scheduled.forEach((brief) => {
-    const key = formatDate(brief.scheduledDate!);
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(brief);
+  mockCalendarEntries.forEach((entry) => {
+    const brief = mockBriefs.find((b) => b.id === entry.brief_id);
+    if (!brief) return;
+    const key = formatDate(entry.scheduled_for);
+    (grouped[key] ??= []).push(brief);
   });
 
   return (
