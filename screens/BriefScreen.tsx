@@ -10,6 +10,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { Video, Brief } from '../types';
+import { mockAnalyses } from '../data/mockVideos';
 
 function Field({
   label,
@@ -46,21 +47,23 @@ export default function BriefScreen({
   existingBrief?: Brief;
   onBack: () => void;
 }) {
-  const [hook, setHook] = useState(existingBrief?.hook ?? video.hook ?? '');
+  const analysis = mockAnalyses.find((a) => a.clip_id === video.id);
+
+  const [hook, setHook] = useState(existingBrief?.hook ?? analysis?.payload.hook ?? '');
   const [script, setScript] = useState(existingBrief?.script ?? '');
   const [shotListText, setShotListText] = useState(
-    existingBrief?.shotList?.join('\n') ?? ''
+    ((existingBrief?.shot_list as string[] | null) ?? []).join('\n')
   );
   const [caption, setCaption] = useState(existingBrief?.caption ?? '');
-  const [cta, setCta] = useState(existingBrief?.cta ?? video.cta ?? '');
+  const [cta, setCta] = useState(existingBrief?.cta ?? analysis?.payload.cta ?? '');
   const [saved, setSaved] = useState(false);
 
   function handleSave() {
     console.log('Saving brief (mock):', {
-      videoId: video.id,
+      clip_id: video.id,
       hook,
       script,
-      shotList: shotListText.split('\n').filter(Boolean),
+      shot_list: shotListText.split('\n').filter(Boolean),
       caption,
       cta,
     });
