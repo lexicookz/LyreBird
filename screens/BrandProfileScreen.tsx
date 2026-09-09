@@ -44,13 +44,20 @@ export default function BrandProfileScreen({
   existingProfile?: BrandProfile;
   onBack: () => void;
 }) {
-  const [product, setProduct] = useState(existingProfile?.product ?? '');
-  const [audience, setAudience] = useState(existingProfile?.audience ?? '');
-  const [tone, setTone] = useState(existingProfile?.tone ?? '');
+  const [name, setName] = useState(existingProfile?.name ?? '');
+  const [product, setProduct] = useState(existingProfile?.product_summary ?? '');
+  const [audience, setAudience] = useState(existingProfile?.target_audience ?? '');
+  const [tone, setTone] = useState(existingProfile?.tone_of_voice ?? '');
   const [saved, setSaved] = useState(false);
 
   function handleSave() {
-    console.log('Saving brand profile (mock):', { product, audience, tone });
+    // 'name' is required by the database (brands.name is NOT NULL),
+    // so we validate it's non-empty before "saving".
+    if (!name.trim()) {
+      console.log('Cannot save: brand name is required');
+      return;
+    }
+    console.log('Saving brand profile (mock):', { name, product, audience, tone });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -69,6 +76,7 @@ export default function BrandProfileScreen({
           This shapes how AI-generated briefs sound and what they focus on for your brand.
         </Text>
 
+        <Field label="Name" value={name} onChangeText={setName} />
         <Field label="Product" value={product} onChangeText={setProduct} multiline />
         <Field label="Audience" value={audience} onChangeText={setAudience} multiline />
         <Field label="Tone" value={tone} onChangeText={setTone} multiline />

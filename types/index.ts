@@ -1,45 +1,83 @@
 // types/index.ts
-// Placeholder types — swap these for Supabase's auto-generated types once
-// Alexia's schema is ready. Keep field names close to hers to make the swap painless.
+// Thin aliases over the generated Supabase types. The schema is now the single
+// source of truth: regenerate with
+//
+//   supabase gen types typescript --linked > supabase/database.types.ts
+//
+// and anything wrong here becomes a compile error rather than a runtime one.
 
-export type FunnelStage = 'top' | 'middle' | 'bottom';
+import type { Database } from '../supabase/database.types';
+
+// ---------- table rows ----------
+
+export type Clip = Database['public']['Tables']['clips']['Row'];
+export type Analysis = Database['public']['Tables']['analyses']['Row'];
+export type Brief = Database['public']['Tables']['briefs']['Row'];
+export type Brand = Database['public']['Tables']['brands']['Row'];
+export type CalendarEntry = Database['public']['Tables']['calendar_entries']['Row'];
+export type Recording = Database['public']['Tables']['recordings']['Row'];
+export type Profile = Database['public']['Tables']['profiles']['Row'];
+
+// Insert shapes omit server-defaulted columns (id, created_at, updated_at).
+export type ClipInsert = Database['public']['Tables']['clips']['Insert'];
+export type BriefInsert = Database['public']['Tables']['briefs']['Insert'];
+export type BrandInsert = Database['public']['Tables']['brands']['Insert'];
+
+// ---------- check-constraint vocabularies ----------
+// The schema enforces these with `check (x in (...))` rather than Postgres
+// enums, and `supabase gen types` only derives unions from real enum types --
+// so these columns arrive as plain `string`. Narrowing them by hand is what
+// gets autocomplete back. If a constraint changes in a migration, change it
+// here in the same commit.
+
+export type ClipStatus = 'processing' | 'ready' | 'failed';
+export type BriefStatus = 'draft' | 'edited' | 'scheduled' | 'published' | 'archived';
+export type RecordingSource = 'screen_recording' | 'camera_roll' | 'link';
+export type RecordingStatus = 'uploaded' | 'processing' | 'split' | 'failed' | 'purged';
+export type CalendarPlatform = 'tiktok' | 'instagram' | 'youtube' | 'other';
+
+// ---------- analyses.payload ----------
+// payload is jsonb, so the database does not constrain it. This mirrors
+// VideoAnalysis in pipeline/schema.py, which is what the Gemini call returns.
+//
+// NOTE: funnelStage uses the pipeline's vocabulary (TOFU/MOFU/BOFU), not the
+// top/middle/bottom the mocks originally used. The two disagreed; the pipeline
+// wins here because it is what actually writes the column. Worth a team
+// decision before either side ships.
+
+export type FunnelStage = 'TOFU' | 'MOFU' | 'BOFU';
+export type FormatTag = 'ugc_testimonial' | 'founder_pov' | 'problem_agitate_solve';
 export type VideoFormat = 'talking_head' | 'voiceover' | 'text_overlay' | 'skit' | 'other';
-export type VideoStatus = 'processing' | 'ready' | 'failed';
 
-export interface Video {
-  id: string;
-  title: string;
-  thumbnailUrl: string;
-  tags: string[];
-  status: VideoStatus;
-  createdAt: string; // ISO date string
-
-  // AI analysis fields (populated once status is 'ready')
-  hook?: string;
-  transcript?: string;
-  onScreenText?: string;
-  shotBeats?: string[];
-  pacing?: string;
-  cta?: string;
-  format?: VideoFormat;
-  funnelStage?: FunnelStage;
-}
-
-export interface Brief {
-  id: string;
-  videoId: string; // links back to Video.id
+// Declared as a type alias rather than an interface on purpose: interfaces have
+// no implicit index signature, so an interface here would not be assignable to
+// the generated `Json` type and TypedAnalysis would stop matching Analysis.
+export type AnalysisPayload = {
   hook: string;
-  script: string;
-  shotList: string[];
-  caption: string;
+  transcript: string;
+  onScreenText: string;
+  shotBeats: string[];
+  pacing: string;
   cta: string;
-  scheduledDate?: string; // ISO date string, optional until scheduled
-  createdAt: string;
-}
+  format: VideoFormat;
+  funnelStage: FunnelStage;
+  formatTag?: FormatTag;
+};
 
-export interface BrandProfile {
-  id: string;
-  product: string;
-  audience: string;
-  tone: string;
-}
+/** An analysis row with its payload narrowed from `Json` to AnalysisPayload. */
+export type TypedAnalysis = Omit<Analysis, 'payload'> & { payload: AnalysisPayload };
+
+// ---------- transitional aliases ----------
+
+/**
+ * @deprecated `Video` was the pre-schema name for a clip. Analysis fields
+ * (hook, transcript, shotBeats, ...) are no longer on this object -- they live
+ * on the matching Analysis row. Use `Clip` directly.
+ */
+export type Video = Clip;
+
+/** @deprecated Renamed to `Brand` to match the table. */
+export type BrandProfile = Brand;
+
+/** @deprecated Renamed to `ClipStatus`. */
+export type VideoStatus = ClipStatus;

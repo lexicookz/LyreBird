@@ -7,7 +7,7 @@ import { Video } from '../types';
 function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (video: Video) => void }) {
   return (
     <Pressable style={styles.card} onPress={() => onSelectVideo(video)}>
-      <Image source={{ uri: video.thumbnailUrl }} style={styles.thumbnail} />
+      <Image source={{ uri: video.thumbnail_url ?? undefined }} style={styles.thumbnail} />
       <View style={styles.cardBody}>
         <Text style={styles.title} numberOfLines={2}>{video.title}</Text>
         <Text style={styles.status}>{video.status}</Text>

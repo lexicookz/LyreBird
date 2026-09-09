@@ -1,0 +1,44 @@
+# Supabase CLI configuration.
+# Docs: https://supabase.com/docs/guides/local-development/cli/config
+
+project_id = "lyrebird"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+# Catches outbound mail locally so signup/confirmation flows can be tested
+# without sending anything.
+[local_smtp]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+# Buckets themselves are created by the init migration, not here.
+file_size_limit = "500MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# Off locally so test accounts are usable immediately. Leave it on in hosted.
+enable_confirmations = false
