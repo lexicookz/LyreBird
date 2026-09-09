@@ -40,6 +40,8 @@ yarn-error.*
 /ios
 /android
 
+# Testing
+coverage/
 # Python / worker
 .env
 __pycache__/
