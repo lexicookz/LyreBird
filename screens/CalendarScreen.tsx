@@ -32,6 +32,17 @@ const MONTH_NAMES = [
   'Oct', 'Nov', 'Dec',
 ];
 
+const STATUS_LEGEND: Array<{
+  label: string;
+  status: Brief['status'];
+}> = [
+  { label: 'Draft', status: 'draft' },
+  { label: 'Edited', status: 'edited' },
+  { label: 'Scheduled', status: 'scheduled' },
+  { label: 'Published', status: 'published' },
+  { label: 'Archived', status: 'archived' },
+];
+
 function getStatusColor(status?: Brief['status']) {
   switch (status) {
     case 'scheduled':
@@ -186,6 +197,21 @@ export default function CalendarScreen({ onBack }: { onBack: () => void }) {
                   {range.charAt(0).toUpperCase() + range.slice(1)}
                 </Text>
               </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.statusLegend}>
+            {STATUS_LEGEND.map((item) => (
+              <View key={item.status} style={styles.legendItem}>
+                <View
+                  style={[
+                    styles.legendColour,
+                    { backgroundColor: getStatusColor(item.status) },
+                  ]}
+                />
+
+                <Text style={styles.legendText}>{item.label}</Text>
+              </View>
             ))}
           </View>
 
@@ -708,5 +734,25 @@ weekDateText: {
 },
 weekBrief: {
   marginBottom: 16,
+},
+statusLegend: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  gap: 10,
+  marginBottom: 20,
+},
+legendItem: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 4,
+},
+legendColour: {
+  width: 10,
+  height: 10,
+  borderRadius: 3,
+},
+legendText: {
+  fontSize: 11,
+  color: '#666',
 },
 });
