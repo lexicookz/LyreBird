@@ -1,7 +1,8 @@
 // screens/VideoDetailScreen.tsx
 import React from 'react';
 import { View, Text, Image, ScrollView, StyleSheet, SafeAreaView, Pressable } from 'react-native';
-import { Video } from '../types';
+import { Clip } from '../types';
+import { mockAnalyses } from '../data/mockVideos';
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -17,11 +18,12 @@ export default function VideoDetailScreen({
   onBack,
   onViewBrief,
 }: {
-  video: Video;
+  video: Clip;
   onBack: () => void;
   onViewBrief: () => void;
 }) {
   const isReady = video.status === 'ready';
+  const analysis = mockAnalyses.find((a) => a.clip_id === video.id);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -32,7 +34,7 @@ export default function VideoDetailScreen({
         <Text style={styles.briefButtonText}>View / Edit Brief</Text>
       </Pressable>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Image source={{ uri: video.thumbnailUrl }} style={styles.hero} />
+        <Image source={{ uri: video.thumbnail_url ?? undefined }} style={styles.hero} />
 
         <Text style={styles.title}>{video.title}</Text>
         <Text style={styles.status}>{video.status}</Text>
@@ -45,52 +47,54 @@ export default function VideoDetailScreen({
           ))}
         </View>
 
-        {!isReady && (
+        {!(isReady && analysis) && (
           <View style={styles.placeholderBox}>
             <Text style={styles.placeholderText}>
               {video.status === 'processing'
                 ? 'Analysis is still processing…'
-                : 'Analysis failed for this video.'}
+                : video.status === 'failed'
+                  ? 'Analysis failed for this video.'
+                  : 'Analysis not available yet for this video.'}
             </Text>
           </View>
         )}
 
-        {isReady && (
+        {isReady && analysis && (
           <>
             <Section label="Hook">
-              <Text style={styles.bodyText}>{video.hook}</Text>
+              <Text style={styles.bodyText}>{analysis.payload.hook}</Text>
             </Section>
 
             <Section label="Transcript">
-              <Text style={styles.bodyText}>{video.transcript}</Text>
+              <Text style={styles.bodyText}>{analysis.payload.transcript}</Text>
             </Section>
 
             <Section label="On-screen text">
-              <Text style={styles.bodyText}>{video.onScreenText}</Text>
+              <Text style={styles.bodyText}>{analysis.payload.onScreenText}</Text>
             </Section>
 
             <Section label="Shot beats">
-              {video.shotBeats?.map((beat, i) => (
+              {analysis.payload.shotBeats?.map((beat, i) => (
                 <Text key={i} style={styles.listItem}>{`${i + 1}. ${beat}`}</Text>
               ))}
             </Section>
 
             <Section label="Pacing">
-              <Text style={styles.bodyText}>{video.pacing}</Text>
+              <Text style={styles.bodyText}>{analysis.payload.pacing}</Text>
             </Section>
 
             <Section label="CTA">
-              <Text style={styles.bodyText}>{video.cta}</Text>
+              <Text style={styles.bodyText}>{analysis.payload.cta}</Text>
             </Section>
 
             <View style={styles.metaRow}>
               <View style={styles.metaChip}>
                 <Text style={styles.metaLabel}>Format</Text>
-                <Text style={styles.metaValue}>{video.format}</Text>
+                <Text style={styles.metaValue}>{analysis.payload.format}</Text>
               </View>
               <View style={styles.metaChip}>
                 <Text style={styles.metaLabel}>Funnel stage</Text>
-                <Text style={styles.metaValue}>{video.funnelStage}</Text>
+                <Text style={styles.metaValue}>{analysis.payload.funnelStage}</Text>
               </View>
             </View>
           </>

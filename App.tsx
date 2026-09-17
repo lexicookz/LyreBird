@@ -53,7 +53,7 @@ export default function App() {
   }
 
   if (screen === 'brief' && selectedVideo) {
-    const existingBrief = mockBriefs.find((b) => b.videoId === selectedVideo.id);
+    const existingBrief = mockBriefs.find((b) => b.clip_id === selectedVideo.id);
     return (
       <BriefScreen
         video={selectedVideo}

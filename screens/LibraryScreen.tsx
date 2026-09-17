@@ -1,13 +1,30 @@
 // screens/LibraryScreen.tsx
-import React from 'react';
-import { View, Text, Image, FlatList, StyleSheet, SafeAreaView, Pressable } from 'react-native';
-import { mockVideos } from '../data/mockVideos';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  FlatList,
+  StyleSheet,
+  SafeAreaView,
+  Pressable,
+  TextInput,
+} from 'react-native';
+import { mockVideos, mockAnalyses } from '../data/mockVideos';
 import { Video } from '../types';
+
+// Maps the stored pipeline values to the friendly labels Alicia's designs use.
+const FUNNEL_FILTERS: { key: 'all' | 'TOFU' | 'MOFU' | 'BOFU'; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'TOFU', label: 'Awareness' },
+  { key: 'MOFU', label: 'Consider' },
+  { key: 'BOFU', label: 'Convert' },
+];
 
 function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (video: Video) => void }) {
   return (
     <Pressable style={styles.card} onPress={() => onSelectVideo(video)}>
-      <Image source={{ uri: video.thumbnailUrl }} style={styles.thumbnail} />
+      <Image source={{ uri: video.thumbnail_url ?? undefined }} style={styles.thumbnail} />
       <View style={styles.cardBody}>
         <Text style={styles.title} numberOfLines={2}>{video.title}</Text>
         <Text style={styles.status}>{video.status}</Text>
@@ -32,6 +49,24 @@ export default function LibraryScreen({
   onOpenBrandProfile: () => void;
   onOpenCalendar: () => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'TOFU' | 'MOFU' | 'BOFU'>('all');
+
+  const filteredVideos = mockVideos.filter((video) => {
+    const query = searchQuery.trim().toLowerCase();
+    const matchesQuery =
+      query === '' ||
+      video.title.toLowerCase().includes(query) ||
+      video.tags.some((tag) => tag.toLowerCase().includes(query));
+
+    if (!matchesQuery) return false;
+
+    if (activeFilter === 'all') return true;
+
+    const analysis = mockAnalyses.find((a) => a.clip_id === video.id);
+    return analysis?.payload.funnelStage === activeFilter;
+  });
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
@@ -45,12 +80,44 @@ export default function LibraryScreen({
           </Pressable>
         </View>
       </View>
-      <FlatList
-        data={mockVideos}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <VideoCard video={item} onSelectVideo={onSelectVideo} />}
-        contentContainerStyle={styles.listContent}
-      />
+
+      <View style={styles.searchRow}>
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search hooks, captions, tags"
+          placeholderTextColor="#aaa"
+        />
+      </View>
+
+      <View style={styles.filterRow}>
+        {FUNNEL_FILTERS.map((filter) => {
+          const isActive = activeFilter === filter.key;
+          return (
+            <Pressable
+              key={filter.key}
+              onPress={() => setActiveFilter(filter.key)}
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
+            >
+              <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                {filter.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {filteredVideos.length === 0 ? (
+        <Text style={styles.emptyText}>No videos match your search.</Text>
+      ) : (
+        <FlatList
+          data={filteredVideos}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <VideoCard video={item} onSelectVideo={onSelectVideo} />}
+          contentContainerStyle={styles.listContent}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -80,6 +147,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#007AFF',
+  },
+  searchRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#222',
+    backgroundColor: '#fafafa',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  filterChip: {
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#f0f0f0',
+  },
+  filterChipActive: {
+    backgroundColor: '#111',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#555',
+  },
+  filterChipTextActive: {
+    color: '#fff',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+    marginTop: 40,
   },
   listContent: {
     paddingHorizontal: 16,
