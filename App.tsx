@@ -1,83 +1,116 @@
 import React, { useState } from 'react';
+import { View, StyleSheet } from 'react-native';
 import LibraryScreen from './screens/LibraryScreen';
+import BriefsScreen from './screens/BriefsScreen';
 import VideoDetailScreen from './screens/VideoDetailScreen';
 import BriefScreen from './screens/BriefScreen';
 import BrandProfileScreen from './screens/BrandProfileScreen';
 import CalendarScreen from './screens/CalendarScreen';
+import BottomTabBar, { TabKey } from './components/BottomTabBar';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
-import { Video } from './types';
+import { Video, Brief, Clip } from './types';
 
-type Screen = 'library' | 'detail' | 'brief' | 'brandProfile' | 'calendar';
+// A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
+type PushedScreen =
+  | { type: 'detail'; video: Video }
+  | { type: 'brief'; video: Video; brief?: Brief }
+  | { type: 'brandProfile' };
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('library');
-  const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>('library');
+  const [pushed, setPushed] = useState<PushedScreen | null>(null);
 
   function handleSelectVideo(video: Video) {
-    setSelectedVideo(video);
-    setScreen('detail');
+    setPushed({ type: 'detail', video });
   }
 
-  function handleBackToLibrary() {
-    setSelectedVideo(null);
-    setScreen('library');
+  function handleSelectBrief(brief: Brief, clip: Clip) {
+    setPushed({ type: 'brief', video: clip, brief });
   }
 
-  function handleViewBrief() {
-    setScreen('brief');
-  }
-
-  function handleBackToDetail() {
-    setScreen('detail');
+  function handleViewBriefFromDetail(video: Video) {
+    const existingBrief = mockBriefs.find((b) => b.clip_id === video.id);
+    setPushed({ type: 'brief', video, brief: existingBrief });
   }
 
   function handleOpenBrandProfile() {
-    setScreen('brandProfile');
+    setPushed({ type: 'brandProfile' });
   }
 
-  function handleOpenCalendar() {
-    setScreen('calendar');
+  function handleClosePushed() {
+    setPushed(null);
   }
 
-  if (screen === 'calendar') {
-    return <CalendarScreen onBack={handleBackToLibrary} />;
-  }
-
-  if (screen === 'brandProfile') {
+  // Pushed screens take over the full screen, no tab bar underneath.
+  if (pushed?.type === 'brandProfile') {
     return (
       <BrandProfileScreen
         existingProfile={mockBrandProfile}
-        onBack={handleBackToLibrary}
+        onBack={handleClosePushed}
       />
     );
   }
 
-  if (screen === 'brief' && selectedVideo) {
-    const existingBrief = mockBriefs.find((b) => b.clip_id === selectedVideo.id);
+  if (pushed?.type === 'brief') {
     return (
       <BriefScreen
-        video={selectedVideo}
-        existingBrief={existingBrief}
-        onBack={handleBackToDetail}
+        video={pushed.video}
+        existingBrief={pushed.brief}
+        onBack={handleClosePushed}
       />
     );
   }
 
-  if (screen === 'detail' && selectedVideo) {
+  if (pushed?.type === 'detail') {
     return (
       <VideoDetailScreen
-        video={selectedVideo}
-        onBack={handleBackToLibrary}
-        onViewBrief={handleViewBrief}
+        video={pushed.video}
+        onBack={handleClosePushed}
+        onViewBrief={() => handleViewBriefFromDetail(pushed.video)}
       />
     );
+  }
+
+  // Otherwise, render the active tab with the persistent bottom bar.
+  function renderTabContent() {
+    switch (activeTab) {
+      case 'library':
+        return (
+          <LibraryScreen
+            onSelectVideo={handleSelectVideo}
+            onOpenBrandProfile={handleOpenBrandProfile}
+            onOpenCalendar={() => setActiveTab('calendar')}
+          />
+        );
+      case 'search':
+        // Temporary: reuses Library's search until Alicia's Search-tab design is confirmed.
+        return (
+          <LibraryScreen
+            onSelectVideo={handleSelectVideo}
+            onOpenBrandProfile={handleOpenBrandProfile}
+            onOpenCalendar={() => setActiveTab('calendar')}
+          />
+        );
+      case 'briefs':
+        return <BriefsScreen onSelectBrief={handleSelectBrief} />;
+      case 'calendar':
+        return <CalendarScreen onBack={() => setActiveTab('library')} />;
+    }
   }
 
   return (
-    <LibraryScreen
-      onSelectVideo={handleSelectVideo}
-      onOpenBrandProfile={handleOpenBrandProfile}
-      onOpenCalendar={handleOpenCalendar}
-    />
+    <View style={styles.container}>
+      <View style={styles.content}>{renderTabContent()}</View>
+      <BottomTabBar activeTab={activeTab} onChangeTab={setActiveTab} />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+  },
+});
