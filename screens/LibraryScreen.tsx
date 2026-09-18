@@ -56,7 +56,7 @@ export default function LibraryScreen({
     const query = searchQuery.trim().toLowerCase();
     const matchesQuery =
       query === '' ||
-      video.title.toLowerCase().includes(query) ||
+      (video.title ?? '').toLowerCase().includes(query) ||
       video.tags.some((tag) => tag.toLowerCase().includes(query));
 
     if (!matchesQuery) return false;
