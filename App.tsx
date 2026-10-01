@@ -9,6 +9,7 @@ import CalendarScreen from './screens/CalendarScreen';
 import BottomTabBar, { TabKey } from './components/BottomTabBar';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video, Brief, Clip } from './types';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
 type PushedScreen =
@@ -16,7 +17,7 @@ type PushedScreen =
   | { type: 'brief'; video: Video; brief?: Brief }
   | { type: 'brandProfile' };
 
-export default function App() {
+function AppContent() {
   const [activeTab, setActiveTab] = useState<TabKey>('library');
   const [pushed, setPushed] = useState<PushedScreen | null>(null);
 
@@ -114,3 +115,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}

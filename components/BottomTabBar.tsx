@@ -1,6 +1,7 @@
 // components/BottomTabBar.tsx
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type TabKey = 'library' | 'search' | 'briefs' | 'calendar';
 
@@ -18,8 +19,14 @@ export default function BottomTabBar({
     activeTab: TabKey;
     onChangeTab: (tab: TabKey) => void;
 }) {
+    const insets = useSafeAreaInsets();
     return (
-        <View style={styles.container}>
+        <View
+            style={[
+                styles.container,
+                { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+        >
             {TABS.map((tab) => {
                 const isActive = tab.key === activeTab;
                 return (
@@ -47,7 +54,6 @@ const styles = StyleSheet.create({
         borderTopColor: '#eee',
         backgroundColor: '#fff',
         paddingTop: 8,
-        paddingBottom: 24,
     },
     tabButton: {
         flex: 1,
