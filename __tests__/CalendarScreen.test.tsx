@@ -1,92 +1,92 @@
 import React from 'react';
-import {
-  act,
-  fireEvent,
-  render,
-} from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import CalendarScreen from '../screens/CalendarScreen';
+import { MONTHS, sampleCalendar, startOfWeek, suggestDate, toISODate, addDays } from '../data/calendar';
+
+async function renderCalendar() {
+  const onEditEntry = jest.fn();
+  const screen = await render(
+    <CalendarScreen
+      items={sampleCalendar()}
+      brandName="Nima Studio"
+      onOpenBrandProfile={jest.fn()}
+      onEditEntry={onEditEntry}
+    />
+  );
+  return { onEditEntry, ...screen };
+}
 
 describe('CalendarScreen', () => {
-  it('starts in List view', async () => {
-    const { getByText } = await render(
-      <CalendarScreen onBack={jest.fn()} />
-    );
+  it('starts on this week with what is left to film', async () => {
+    const { getByText } = await renderCalendar();
 
-    expect(getByText('Your Content Schedule')).toBeTruthy();
-    expect(
-      getByText(
-        "I used to hit snooze 5 times. Here's what fixed it."
-      )
-    ).toBeTruthy();
+    // The seed puts three unposted briefs in the current week.
+    expect(getByText('Three to film\nthis week')).toBeTruthy();
+    expect(getByText("“I used to hit snooze 5 times. Here's what fixed it.”")).toBeTruthy();
+    expect(getByText('Planned')).toBeTruthy();
+    expect(getByText('Filmed')).toBeTruthy();
+    expect(getByText('Draft')).toBeTruthy();
+    expect(getByText('Shot list not written')).toBeTruthy();
   });
 
-  it('switches to the Year calendar view', async () => {
-    const { getByRole, getByText } = await render(
-      <CalendarScreen onBack={jest.fn()} />
-    );
+  it('tapping an entry opens it for editing', async () => {
+    const { getByText, onEditEntry } = await renderCalendar();
 
-    await act(async () => {
-      fireEvent.press(
-        getByRole('button', { name: 'Calendar' })
-      );
-    });
+    await fireEvent.press(getByText("“I used to hit snooze 5 times. Here's what fixed it.”"));
 
-    expect(getByText('2026')).toBeTruthy();
+    expect(onEditEntry).toHaveBeenCalledWith('bbbbbbbb-0000-4000-8000-000000000001');
+  });
+
+  it('moves between weeks', async () => {
+    const { getByLabelText, getByText } = await renderCalendar();
+
+    await fireEvent.press(getByLabelText('Next week'));
+    expect(getByText('Nothing to film\nnext week')).toBeTruthy();
+
+    await fireEvent.press(getByLabelText('Previous week'));
+    await fireEvent.press(getByLabelText('Previous week'));
+    // The seed's posted brief is last Wednesday.
+    expect(getByText('Nothing to film\nlast week')).toBeTruthy();
+    expect(getByText('Posted')).toBeTruthy();
+  });
+
+  it('month view shows the selected day', async () => {
+    const { getByText, getByRole, getAllByText } = await renderCalendar();
+
+    await fireEvent.press(getByRole('button', { name: 'Month' }));
+
+    const month = MONTHS[new Date().getMonth()];
+    expect(getByText(month)).toBeTruthy();
+    expect(getAllByText(/planned$/).length).toBeGreaterThan(0);
+  });
+
+  it('year view shows every month and opens one when tapped', async () => {
+    const { getByText, getByRole, getByLabelText } = await renderCalendar();
+
+    await fireEvent.press(getByRole('button', { name: 'Year' }));
+
+    const year = String(new Date().getFullYear());
+    expect(getByText(year)).toBeTruthy();
     expect(getByText('Jan')).toBeTruthy();
     expect(getByText('Dec')).toBeTruthy();
+
+    await fireEvent.press(getByLabelText(/^Jan,/));
+    expect(getByText('January')).toBeTruthy();
+  });
+});
+
+describe('calendar data', () => {
+  it('weeks start on Monday', () => {
+    // 1 October 2026 is a Thursday.
+    expect(toISODate(startOfWeek(new Date(2026, 9, 1)))).toBe('2026-09-28');
   });
 
-  it('switches between Week, Month and Year ranges', async () => {
-    const { getByRole, getByText } = await render(
-      <CalendarScreen onBack={jest.fn()} />
-    );
-
-    await act(async () => {
-      fireEvent.press(
-        getByRole('button', { name: 'Calendar' })
-      );
-    });
-
-    await act(async () => {
-      fireEvent.press(
-        getByRole('button', { name: 'Month' })
-      );
-    });
-
-    expect(getByText('Sep 2026')).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.press(
-        getByRole('button', { name: 'Week' })
-      );
-    });
-
-    expect(
-      getByText(
-        "I used to hit snooze 5 times. Here's what fixed it."
-      )
-    ).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.press(
-        getByRole('button', { name: 'Year' })
-      );
-    });
-
-    expect(getByText('2026')).toBeTruthy();
-  });
-
-  it('calls onBack when Back is pressed', async () => {
-    const onBack = jest.fn();
-
-    const { getByText } = await render(
-      <CalendarScreen onBack={onBack} />
-    );
-
-    await act(async () => {
-      fireEvent.press(getByText('← Back'));
-    });
-
-    expect(onBack).toHaveBeenCalledTimes(1);
+  it('suggests the first day from tomorrow with nothing planned', () => {
+    const today = new Date(2026, 9, 1);
+    const items = [
+      { briefId: 'a', date: toISODate(addDays(today, 1)), stage: 'TOFU' as const, status: 'planned' as const },
+      { briefId: 'b', date: toISODate(addDays(today, 2)), stage: 'TOFU' as const, status: 'planned' as const },
+    ];
+    expect(suggestDate(items, today)).toBe('2026-10-04');
   });
 });

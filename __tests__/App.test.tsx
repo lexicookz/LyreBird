@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Alert } from 'react-native';
 import App from '../App';
+import { sampleCalendar } from '../data/calendar';
 
 jest.mock('expo-image-picker', () => ({
   getMediaLibraryPermissionsAsync: jest.fn(async () => ({
@@ -71,6 +72,37 @@ describe('App', () => {
     await fireEvent.press(getByText('Import'));
 
     expect(await findByText('Analysing 2 new clips')).toBeTruthy();
+  });
+
+  test('a new calendar starts empty', async () => {
+    await AsyncStorage.setItem('lyrebird.onboarded', 'true');
+    const { findByLabelText, findByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Calendar'));
+
+    expect(await findByText('Nothing to film\nthis week')).toBeTruthy();
+    expect(await AsyncStorage.getItem('lyrebird.calendar')).toBeNull();
+  });
+
+  test('an entry on the calendar can be rescheduled and its status changed', async () => {
+    await AsyncStorage.setItem('lyrebird.onboarded', 'true');
+    await AsyncStorage.setItem('lyrebird.calendar', JSON.stringify(sampleCalendar()));
+    const { findByLabelText, findByText, getByText, getAllByText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Calendar'));
+    await fireEvent.press(await findByText("“I used to hit snooze 5 times. Here's what fixed it.”"));
+
+    expect(await findByText('Schedule brief')).toBeTruthy();
+    expect(getByText('Remove from calendar')).toBeTruthy();
+    await fireEvent.press(getAllByText('Posted')[0]);
+    await fireEvent.press(getByText('Save schedule'));
+
+    expect(queryByText('Schedule brief')).toBeNull();
+    expect(getByText('Posted')).toBeTruthy();
+    const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.calendar')) ?? '[]');
+    expect(saved).toContainEqual(
+      expect.objectContaining({ briefId: 'bbbbbbbb-0000-4000-8000-000000000001', status: 'posted' })
+    );
   });
 
   test('skipping the opener goes straight to the app and is remembered', async () => {

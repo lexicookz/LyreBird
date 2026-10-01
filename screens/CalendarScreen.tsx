@@ -1,489 +1,421 @@
 // screens/CalendarScreen.tsx
-// npx.cmd expo start --tunnel
-import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, } from 'react-native';
+// Figma: "Content calendar (weekly / monthly / yearly)". The date on an entry is
+// the day the content should be posted. Data comes from data/calendar.ts.
+import React, { useMemo, useState } from 'react';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type ImageSourcePropType,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { mockBriefs, mockCalendarEntries, mockClips } from '../data/mockVideos';
-import { Brief, CalendarEntry } from '../types';
+import MonthGrid, { DayMark } from '../components/MonthGrid';
+import { Eyebrow } from '../components/ui';
+import {
+  CALENDAR_STATUSES,
+  CalendarItem,
+  MONTHS,
+  addDays,
+  formatDayLabel,
+  parseISODate,
+  startOfWeek,
+  toISODate,
+} from '../data/calendar';
+import { mockBriefs, mockClips } from '../data/mockVideos';
+import { colors, fonts, FUNNEL_ORDER, funnelStages, pagePadding, radius } from '../theme';
+import type { Brief, FunnelStage } from '../types';
 
+type Range = 'week' | 'month' | 'year';
 
-function formatDate(iso: string) {
-  const date = new Date(iso);
-  return date.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+const STAGE_MASCOTS: Record<FunnelStage, ImageSourcePropType> = {
+  TOFU: require('../assets/mascots/aware.png'),
+  MOFU: require('../assets/mascots/consider.png'),
+  BOFU: require('../assets/mascots/convert.png'),
+};
+
+const NUMBER_WORDS = ['Nothing', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+
+function numberWord(n: number) {
+  return NUMBER_WORDS[n] ?? String(n);
 }
 
-function toIsoDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
+function statusLabel(item: CalendarItem) {
+  return CALENDAR_STATUSES.find((s) => s.key === item.status)?.label ?? item.status;
 }
 
-
-const CALENDAR_YEAR = 2026;
-
-const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar',
-  'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep',
-  'Oct', 'Nov', 'Dec',
-];
-
-const STATUS_LEGEND: Array<{
-  label: string;
-  status: Brief['status'];
-}> = [
-  { label: 'Draft', status: 'draft' },
-  { label: 'Edited', status: 'edited' },
-  { label: 'Scheduled', status: 'scheduled' },
-  { label: 'Published', status: 'published' },
-  { label: 'Archived', status: 'archived' },
-];
-
-function getStatusColor(status?: Brief['status']) {
-  switch (status) {
-    case 'scheduled':
-      return '#dcefc5';
-    case 'published':
-      return '#dcd4f3';
-    case 'edited':
-      return '#f5d5df';
-    case 'archived':
-      return '#cccccc';
-    case 'draft':
-      return '#d8e8f2';
-    default:
-      return '#eeeeec';
-  }
+function dayLabel(iso: string) {
+  return formatDayLabel(parseISODate(iso));
 }
 
+/** "4 shots · 0:28 · caption ready", or "Shot list not written". */
+function briefMeta(brief: Brief) {
+  const shots = Array.isArray(brief.shot_list) ? brief.shot_list.length : 0;
+  if (shots === 0) return 'Shot list not written';
+  const seconds = mockClips.find((c) => c.id === brief.clip_id)?.duration_seconds;
+  return [
+    `${shots} shot${shots === 1 ? '' : 's'}`,
+    seconds ? `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}` : null,
+    brief.caption ? 'caption ready' : 'needs caption',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
 
-function BriefRow({ brief }: { brief: Brief }) {
-  const clip = mockClips.find((c) => c.id === brief.clip_id);
+// ---------- pieces ----------
 
+function EntryCard({
+  item,
+  brief,
+  onPress,
+}: {
+  item: CalendarItem;
+  brief: Brief;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.row}>
-      <View style={styles.rowHeader}>
-        <Text style={styles.rowHook} numberOfLines={1}>
-          {brief.hook}
-        </Text>
-
-        <Text style={styles.statusBadge}>
-          {brief.status.charAt(0).toUpperCase() + brief.status.slice(1)}
-        </Text>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={[styles.entry, { backgroundColor: funnelStages[item.stage].color }]}
+    >
+      <Image
+        source={STAGE_MASCOTS[item.stage]}
+        style={[styles.entryMascot, item.stage === 'MOFU' && { transform: [{ scaleX: -1 }] }]}
+        accessibilityIgnoresInvertColors
+        resizeMode="contain"
+      />
+      <View style={styles.entryTop}>
+        <Text style={styles.entryDate}>{dayLabel(item.date)}</Text>
+        <View style={styles.statusPill}>
+          <Text style={styles.statusPillText}>{statusLabel(item)}</Text>
+        </View>
       </View>
-
-      {clip && (
-        <Text style={styles.rowSource} numberOfLines={1}>
-          From: {clip.title}
-        </Text>
-      )}
-    </View>
+      <Text style={styles.entryHook}>“{brief.hook}”</Text>
+      <Text style={styles.entryMeta}>{briefMeta(brief)}</Text>
+    </Pressable>
   );
 }
 
-export default function CalendarScreen({ onBack }: { onBack: () => void }) {
-  const [activeView, setActiveView] =
-    useState<'calendar' | 'list'>('list');
-
-  const [calendarRange, setCalendarRange] =
-    useState<'week' | 'month' | 'year'>('year');
-
-  const [selectedMonth, setSelectedMonth] = useState(8);
-
-
-  // const scheduledIds = new Set(calendarEntries.map((e) => e.brief_id));
-  // const unscheduled = mockBriefs.filter((b) => !scheduledIds.has(b.id));
-
-  const grouped: Record<string, Brief[]> = {};
-  const [weekOffset, setWeekOffset] = useState(0);
-
-  const initialWeekStart = new Date(CALENDAR_YEAR, 7, 30);
-  const weekStart = new Date(initialWeekStart);
-
-  weekStart.setDate(initialWeekStart.getDate() + weekOffset * 7);
-
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(weekStart);
-    date.setDate(weekStart.getDate() + index);
-    return date;
-  });
-
-  const weekEnd = weekDays[6];
-
-  const [calendarEntries, setCalendarEntries] =
-  useState<CalendarEntry[]>(mockCalendarEntries);
-
-  calendarEntries.forEach((entry) => {
-    const brief = mockBriefs.find((b) => b.id === entry.brief_id);
-    if (!brief) return;
-    const key = formatDate(entry.scheduled_for);
-    (grouped[key] ??= []).push(brief);
-  });
+function MiniMonth({
+  year,
+  month,
+  marks,
+  count,
+  onPress,
+}: {
+  year: number;
+  month: number;
+  marks: Map<string, DayMark>;
+  count: number;
+  onPress: () => void;
+}) {
+  const leading = (new Date(year, month, 1).getDay() + 6) % 7;
+  const days = new Date(year, month + 1, 0).getDate();
+  const cells: (string | null)[] = [
+    ...Array<null>(leading).fill(null),
+    ...Array.from({ length: days }, (_, i) => toISODate(new Date(year, month, i + 1))),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+  const name = MONTHS[month].slice(0, 3);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerRow}>
-        <Pressable onPress={onBack} hitSlop={10}>
-          <Text style={styles.backButton}>← Back</Text>
-        </Pressable>
-        <Text style={styles.headerTitle}>Calendar</Text>
+    <Pressable
+      onPress={onPress}
+      style={styles.mini}
+      accessibilityRole="button"
+      accessibilityLabel={`${name}, ${count} planned`}
+    >
+      <View style={styles.miniHeader}>
+        <Text style={styles.miniName}>{name}</Text>
+        <Text style={styles.miniCount}>{count}</Text>
       </View>
-
-      <View style={styles.viewToggle}>
-        <Pressable
-          style={[
-            styles.toggleButton,
-            activeView === 'calendar' && styles.toggleButtonActive,
-          ]}
-          onPress={() => setActiveView('calendar')}
-          accessibilityRole="button"
-          accessibilityState={{ selected: activeView === 'calendar' }}
-        >
-          <Text
-            style={[
-              styles.toggleText,
-              activeView === 'calendar' && styles.toggleTextActive,
-            ]}
-          >
-            Calendar
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[
-            styles.toggleButton,
-            activeView === 'list' && styles.toggleButtonActive,
-          ]}
-          onPress={() => setActiveView('list')}
-          accessibilityRole="button"
-          accessibilityState={{ selected: activeView === 'list' }}
-        >
-          <Text
-            style={[
-              styles.toggleText,
-              activeView === 'list' && styles.toggleTextActive,
-            ]}
-          >
-            List
-          </Text>
-        </Pressable>
-      </View>
-
-      {activeView === 'calendar' ? (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-
-          <View style={styles.rangeToggle}>
-            {(['week', 'month', 'year'] as const).map((range) => (
-              <Pressable
-                key={range}
+      <View style={styles.miniGrid}>
+        {Array.from({ length: cells.length / 7 }, (_, w) => (
+          <View key={w} style={styles.miniRow}>
+            {cells.slice(w * 7, w * 7 + 7).map((iso, i) => (
+              <View
+                key={i}
                 style={[
-                  styles.rangeButton,
-                  calendarRange === range && styles.rangeButtonActive,
+                  styles.miniCell,
+                  iso ? { backgroundColor: marks.get(iso)?.color ?? colors.track } : null,
                 ]}
-                onPress={() => setCalendarRange(range)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: calendarRange === range }}
-              >
-                <Text
+              />
+            ))}
+          </View>
+        ))}
+      </View>
+    </Pressable>
+  );
+}
+
+// ---------- screen ----------
+
+export default function CalendarScreen({
+  items,
+  brandName,
+  onOpenBrandProfile,
+  onEditEntry,
+}: {
+  items: CalendarItem[];
+  brandName?: string;
+  onOpenBrandProfile: () => void;
+  /** Opens the schedule sheet for an entry's brief. */
+  onEditEntry: (briefId: string) => void;
+}) {
+  const today = new Date();
+  const todayISO = toISODate(today);
+  const [range, setRange] = useState<Range>('week');
+  /** The day the visible week / month / year is built around. */
+  const [anchor, setAnchor] = useState(today);
+  const [selectedISO, setSelectedISO] = useState(todayISO);
+
+  const briefsById = useMemo(() => new Map(mockBriefs.map((b) => [b.id, b])), []);
+  const entries = useMemo(
+    () =>
+      items
+        .filter((i) => briefsById.has(i.briefId))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    [items, briefsById]
+  );
+  const marks = useMemo(
+    () => new Map(entries.map((e) => [e.date, { color: funnelStages[e.stage].color }])),
+    [entries]
+  );
+
+  function shift(delta: number) {
+    if (range === 'week') setAnchor(addDays(anchor, delta * 7));
+    if (range === 'month') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1));
+    if (range === 'year') setAnchor(new Date(anchor.getFullYear() + delta, anchor.getMonth(), 1));
+  }
+
+  function card(item: CalendarItem) {
+    return (
+      <EntryCard
+        key={item.briefId}
+        item={item}
+        brief={briefsById.get(item.briefId)!}
+        onPress={() => onEditEntry(item.briefId)}
+      />
+    );
+  }
+
+  // ----- week -----
+  function renderWeek() {
+    const monday = startOfWeek(anchor);
+    const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+    const isoDays = days.map(toISODate);
+    const weekEntries = entries.filter((e) => isoDays.includes(e.date));
+    const toFilm = weekEntries.filter((e) => e.status !== 'posted').length;
+    const weeksAway = Math.round((monday.getTime() - startOfWeek(today).getTime()) / (7 * 86_400_000));
+    const when =
+      weeksAway === 0
+        ? 'this week'
+        : weeksAway === 1
+          ? 'next week'
+          : weeksAway === -1
+            ? 'last week'
+            : `w/c ${monday.getDate()} ${MONTHS[monday.getMonth()].slice(0, 3)}`;
+
+    return (
+      <>
+        <Text style={styles.title}>
+          {numberWord(toFilm)} to film{'\n'}
+          {when}
+        </Text>
+        <View style={styles.strip}>
+          {days.map((d, i) => {
+            const iso = isoDays[i];
+            const mark = marks.get(iso);
+            const isToday = iso === todayISO;
+            return (
+              <View key={iso} style={styles.stripDay}>
+                <Text style={styles.stripWeekday}>{'MTWTFSS'[i]}</Text>
+                <View
                   style={[
-                    styles.rangeText,
-                    calendarRange === range && styles.rangeTextActive,
+                    styles.stripTile,
+                    mark && { backgroundColor: mark.color },
+                    isToday && { backgroundColor: colors.ink },
                   ]}
                 >
-                  {range.charAt(0).toUpperCase() + range.slice(1)}
+                  <Text
+                    style={[
+                      styles.stripNumber,
+                      mark && styles.stripNumberMarked,
+                      isToday && { color: colors.cream, fontFamily: fonts.heading },
+                    ]}
+                  >
+                    {d.getDate()}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+        {weekEntries.length === 0 ? (
+          <Text style={styles.empty}>
+            Nothing planned {when}. Open a brief and tap Schedule to plan it here.
+          </Text>
+        ) : (
+          <View style={styles.list}>{weekEntries.map(card)}</View>
+        )}
+      </>
+    );
+  }
+
+  // ----- month -----
+  function renderMonth() {
+    const year = anchor.getFullYear();
+    const month = anchor.getMonth();
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const monthCount = entries.filter((e) => e.date.startsWith(prefix)).length;
+    const dayEntries = entries.filter((e) => e.date === selectedISO);
+
+    return (
+      <>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>
+            {MONTHS[anchor.getMonth()]}
+          </Text>
+          <Text style={styles.titleMeta}>{monthCount} planned</Text>
+        </View>
+        <MonthGrid
+          year={year}
+          month={month}
+          todayISO={todayISO}
+          selectedISO={selectedISO}
+          marks={marks}
+          onSelect={setSelectedISO}
+        />
+        <View style={styles.list}>
+          <Eyebrow>{dayLabel(selectedISO)}</Eyebrow>
+          {dayEntries.length === 0 ? (
+            <Text style={styles.emptyLeft}>Nothing planned for this day.</Text>
+          ) : (
+            dayEntries.map(card)
+          )}
+        </View>
+      </>
+    );
+  }
+
+  // ----- year -----
+  function renderYear() {
+    const year = anchor.getFullYear();
+    const yearEntries = entries.filter((e) => e.date.startsWith(`${year}-`));
+    const filmed = yearEntries.filter((e) => e.status === 'filmed' || e.status === 'posted');
+    const planned = yearEntries.length - filmed.length;
+
+    const perMonth = Array.from({ length: 12 }, (_, m) =>
+      yearEntries.filter((e) => parseISODate(e.date).getMonth() === m)
+    );
+    const filmedPerMonth = perMonth.map((list) =>
+      list.filter((e) => e.status === 'filmed' || e.status === 'posted')
+    );
+    const best = filmedPerMonth.reduce(
+      (bestIdx, list, i) => (list.length > filmedPerMonth[bestIdx].length ? i : bestIdx),
+      0
+    );
+    const bestList = filmedPerMonth[best];
+    const bestStage = FUNNEL_ORDER.map((s) => ({
+      stage: s,
+      n: bestList.filter((e) => e.stage === s).length,
+    })).sort((a, b) => b.n - a.n)[0];
+
+    return (
+      <>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>{year}</Text>
+          <Text style={styles.titleMeta}>
+            {filmed.length} filmed · {planned} planned
+          </Text>
+        </View>
+        <View style={styles.legend}>
+          {FUNNEL_ORDER.map((s) => (
+            <View key={s} style={styles.legendItem}>
+              <View style={[styles.legendSwatch, { backgroundColor: funnelStages[s].color }]} />
+              <Text style={styles.legendText}>{funnelStages[s].label}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.yearGrid}>
+          {perMonth.map((list, m) => (
+            <MiniMonth
+              key={m}
+              year={year}
+              month={m}
+              marks={marks}
+              count={list.length}
+              onPress={() => {
+                setAnchor(new Date(year, m, 1));
+                setRange('month');
+              }}
+            />
+          ))}
+        </View>
+        {bestList.length > 0 && (
+          <View style={styles.best}>
+            <Text style={styles.bestTitle}>
+              {MONTHS[best]} was your best month
+            </Text>
+            <Text style={styles.bestBody}>
+              {numberWord(bestList.length)} filmed
+              {bestStage.n > 0
+                ? `, ${bestStage.n === bestList.length ? 'all' : numberWord(bestStage.n).toLowerCase()} of them ${funnelStages[bestStage.stage].label.toLowerCase()}`
+                : ''}
+              .
+            </Text>
+          </View>
+        )}
+      </>
+    );
+  }
+
+  const brandInitial = (brandName?.trim()[0] ?? '').toUpperCase();
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.topRow}>
+          <View style={styles.segment}>
+            {(['week', 'month', 'year'] as const).map((r) => (
+              <Pressable
+                key={r}
+                onPress={() => setRange(r)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: range === r }}
+                style={[styles.segmentItem, range === r && styles.segmentItemActive]}
+              >
+                <Text style={[styles.segmentText, range === r && styles.segmentTextActive]}>
+                  {r[0].toUpperCase() + r.slice(1)}
                 </Text>
               </Pressable>
             ))}
           </View>
-
-          <View style={styles.statusLegend}>
-            {STATUS_LEGEND.map((item) => (
-              <View key={item.status} style={styles.legendItem}>
-                <View
-                  style={[
-                    styles.legendColour,
-                    { backgroundColor: getStatusColor(item.status) },
-                  ]}
-                />
-
-                <Text style={styles.legendText}>{item.label}</Text>
-              </View>
-            ))}
+          <View style={styles.navRow}>
+            <Pressable onPress={() => shift(-1)} style={styles.navButton} accessibilityRole="button" accessibilityLabel={`Previous ${range}`} hitSlop={4}>
+              <View style={[styles.navChevron, { transform: [{ rotate: '-135deg' }], marginLeft: 3 }]} />
+            </Pressable>
+            <Pressable onPress={() => shift(1)} style={styles.navButton} accessibilityRole="button" accessibilityLabel={`Next ${range}`} hitSlop={4}>
+              <View style={[styles.navChevron, { transform: [{ rotate: '45deg' }], marginRight: 3 }]} />
+            </Pressable>
+            <Pressable
+              onPress={onOpenBrandProfile}
+              style={styles.avatar}
+              accessibilityRole="button"
+              accessibilityLabel="Brand profile"
+            >
+              {!!brandInitial && <Text style={styles.avatarText}>{brandInitial}</Text>}
+            </Pressable>
           </View>
+        </View>
 
-          {calendarRange === 'week' && (
-            <View>
-              <View style={styles.weekHeader}>
-                <Pressable
-                  onPress={() => setWeekOffset((current) => current - 1)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous week"
-                >
-                  <Text style={styles.monthArrow}>‹</Text>
-                </Pressable>
-
-                <Text style={styles.weekTitle}>
-                  {weekStart.toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                  })}
-                  {' – '}
-                  {weekEnd.toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </Text>
-
-                <Pressable
-                  onPress={() => setWeekOffset((current) => current + 1)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Next week"
-                >
-                  <Text style={styles.monthArrow}>›</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.weekGrid}>
-                {weekDays.map((date) => {
-                  const isoDate = toIsoDate(date);
-
-                  const entry = calendarEntries.find(
-                    (item) => item.scheduled_for === isoDate
-                  );
-
-                  const brief = entry
-                    ? mockBriefs.find((item) => item.id === entry.brief_id)
-                    : undefined;
-
-                  return (
-                    <View
-                      key={isoDate}
-                      style={[
-                        styles.weekDay,
-                        brief && {
-                          backgroundColor: getStatusColor(brief.status),
-                        },
-                      ]}
-                    >
-                      <Text style={styles.weekdayText}>
-                        {date.toLocaleDateString(undefined, { weekday: 'short' })}
-                      </Text>
-
-                      <Text style={styles.weekDateText}>{date.getDate()}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {weekDays.flatMap((date) => {
-                const isoDate = toIsoDate(date);
-
-                return calendarEntries
-                  .filter((entry) => entry.scheduled_for === isoDate)
-                  .map((entry) => {
-                    const brief = mockBriefs.find(
-                      (item) => item.id === entry.brief_id
-                    );
-
-                    return brief ? (
-                      <View key={entry.id} style={styles.weekBrief}>
-                        <Text style={styles.dateLabel}>{formatDate(isoDate)}</Text>
-                        <BriefRow brief={brief} />
-                      </View>
-                    ) : null;
-                  });
-              })}
-            </View>
-          )}
-
-          {calendarRange === 'month' && (
-            <View>
-              <View style={styles.monthHeader}>
-                <Pressable
-                  onPress={() =>
-                    setSelectedMonth((current) => (current === 0 ? 11 : current - 1))
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous month"
-                >
-                  <Text style={styles.monthArrow}>‹</Text>
-                </Pressable>
-
-                <Text style={styles.monthTitle}>
-                  {MONTH_NAMES[selectedMonth]} {CALENDAR_YEAR}
-                </Text>
-
-                <Pressable
-                  onPress={() =>
-                    setSelectedMonth((current) => (current === 11 ? 0 : current + 1))
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel="Next month"
-                >
-                  <Text style={styles.monthArrow}>›</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.weekdayRow}>
-                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-                  <Text key={`${day}-${index}`} style={styles.weekdayLabel}>
-                    {day}
-                  </Text>
-                ))}
-              </View>
-
-              <View style={styles.monthDaysGrid}>
-                {[
-                  ...Array(
-                    new Date(CALENDAR_YEAR, selectedMonth, 1).getDay()
-                  ).fill(null),
-
-                  ...Array.from(
-                    {
-                      length: new Date(
-                        CALENDAR_YEAR,
-                        selectedMonth + 1,
-                        0
-                      ).getDate(),
-                    },
-                    (_, index) => index + 1
-                  ),
-                ].map((day, index) => {
-                  if (day === null) {
-                    return <View key={`blank-${index}`} style={styles.monthDayCell} />;
-                  }
-
-                  const date = `${CALENDAR_YEAR}-${String(selectedMonth + 1).padStart(
-                    2,
-                    '0'
-                  )}-${String(day).padStart(2, '0')}`;
-
-                  const entry = calendarEntries.find(
-                    (item) => item.scheduled_for === date
-                  );
-
-                  const brief = entry
-                    ? mockBriefs.find((item) => item.id === entry.brief_id)
-                    : undefined;
-
-                  return (
-                    <View
-                      key={date}
-                      style={[
-                        styles.monthDayCell,
-                        brief && {
-                          backgroundColor: getStatusColor(brief.status),
-                        },
-                      ]}
-                      accessibilityLabel={`${date}${brief ? `, ${brief.status}` : ''}`}
-                    >
-                      <Text style={styles.monthDayText}>{day}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {calendarRange === 'year' && (
-            <>
-              <Text style={styles.yearTitle}>{CALENDAR_YEAR}</Text>
-
-              <View style={styles.yearGrid}>
-                {MONTH_NAMES.map((monthName, monthIndex) => {
-              const numberOfDays = new Date(
-                CALENDAR_YEAR,
-                monthIndex + 1,
-                0
-              ).getDate();
-
-              const firstWeekday = new Date(
-                CALENDAR_YEAR,
-                monthIndex,
-                1
-              ).getDay();
-
-              const cells: Array<number | null> = [
-                ...Array(firstWeekday).fill(null),
-                ...Array.from({ length: numberOfDays }, (_, index) => index + 1),
-              ];
-
-              return (
-                <View key={monthName} style={styles.monthCard}>
-                  <Text style={styles.monthName}>{monthName}</Text>
-
-                  <View style={styles.daysGrid}>
-                    {cells.map((day, cellIndex) => {
-                      if (day === null) {
-                        return <View key={`empty-${cellIndex}`} style={styles.emptyDay} />;
-                      }
-
-                      const date = `${CALENDAR_YEAR}-${String(monthIndex + 1).padStart(
-                        2,
-                        '0'
-                      )}-${String(day).padStart(2, '0')}`;
-
-                      const entry = calendarEntries.find(
-                        (calendarEntry) => calendarEntry.scheduled_for === date
-                      );
-
-                      const brief = entry
-                        ? mockBriefs.find((item) => item.id === entry.brief_id)
-                        : undefined;
-
-                      return (
-                        <View
-                          key={date}
-                          style={[
-                            styles.calendarDay,
-                            { backgroundColor: getStatusColor(brief?.status) },
-                          ]}
-                          accessibilityLabel={`${date}${brief ? `, ${brief.status}` : ''}`}
-                        />
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-  </>
-)}
-
-
-        </ScrollView>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.viewHeading}>Your Content Schedule</Text>
-
-          {Object.entries(grouped).map(([date, briefs]) => (
-            <View key={date} style={styles.dateGroup}>
-              <Text style={styles.dateLabel}>{date}</Text>
-
-              {briefs.map((brief) => (
-                <BriefRow key={brief.id} brief={brief} />
-              ))}
-            </View>
-          ))}
-
-          {/* {unscheduled.length > 0 && (
-            <View style={styles.dateGroup}>
-              <Text style={styles.dateLabel}>Not yet scheduled</Text>
-
-              {unscheduled.map((brief) => (
-                <BriefRow key={brief.id} brief={brief} />
-              ))}
-            </View>
-          )} */}
-        </ScrollView>
-      )}
+        {range === 'week' && renderWeek()}
+        {range === 'month' && renderMonth()}
+        {range === 'year' && renderYear()}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -491,269 +423,276 @@ export default function CalendarScreen({ onBack }: { onBack: () => void }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
-  headerRow: {
+  scroll: {
+    paddingHorizontal: pagePadding,
+    paddingTop: 12,
+    paddingBottom: 24,
+    gap: 16,
+  },
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    gap: 12,
+    justifyContent: 'space-between',
   },
-  backButton: {
-    fontSize: 15,
-    color: '#007AFF',
-    fontWeight: '600',
+  segment: {
+    flexDirection: 'row',
+    padding: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.field,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  segmentItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
   },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
+  segmentItemActive: {
+    backgroundColor: colors.ink,
   },
-  emptyText: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 20,
+  segmentText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.textLabel,
   },
-  dateGroup: {
-    marginBottom: 24,
+  segmentTextActive: {
+    color: colors.cream,
   },
-  dateLabel: {
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  navButton: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.pill,
+    backgroundColor: colors.field,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navChevron: {
+    width: 8,
+    height: 8,
+    borderTopWidth: 1.6,
+    borderRightWidth: 1.6,
+    borderColor: colors.textStrong,
+  },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: colors.track,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  avatarText: {
+    fontFamily: fonts.heading,
     fontSize: 13,
-    fontWeight: '700',
-    color: '#999',
-    textTransform: 'uppercase',
-    marginBottom: 8,
+    color: colors.ink,
   },
-  row: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
+  title: {
+    fontFamily: fonts.display,
+    fontSize: 32,
+    lineHeight: 33,
+    letterSpacing: -1.3,
+    color: colors.ink,
+    paddingTop: 2,
   },
-  rowHook: {
-  flex: 1,
-  minWidth: 0,
-  fontSize: 15,
-  fontWeight: '600',
-  color: '#222',
-  marginBottom: 2,
-},
-  rowSource: {
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  titleMeta: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.textLabel,
+  },
+
+  // week strip
+  strip: {
+    flexDirection: 'row',
+    gap: 5,
+  },
+  stripDay: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 8,
+  },
+  stripWeekday: {
+    fontFamily: fonts.body,
+    fontSize: 10.5,
+    color: colors.textFaint,
+  },
+  stripTile: {
+    alignSelf: 'stretch',
+    height: 48,
+    borderRadius: radius.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stripNumber: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    color: colors.textStrong,
+  },
+  stripNumberMarked: {
+    fontFamily: fonts.heading,
+    color: colors.ink,
+  },
+
+  // entries
+  list: {
+    gap: 11,
+  },
+  entry: {
+    borderRadius: radius.card,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 16,
+    gap: 8,
+    overflow: 'hidden',
+    minHeight: 108,
+  },
+  entryMascot: {
+    position: 'absolute',
+    right: -26,
+    bottom: -34,
+    width: 120,
+    height: 116,
+  },
+  entryTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  entryDate: {
+    fontFamily: fonts.body,
+    fontSize: 10.5,
+    letterSpacing: 1.3,
+    color: colors.textBody,
+  },
+  statusPill: {
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.frost,
+  },
+  statusPillText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 11,
+    color: colors.ink,
+  },
+  entryHook: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    lineHeight: 20.5,
+    letterSpacing: -0.3,
+    color: colors.ink,
+    marginRight: 64,
+  },
+  entryMeta: {
+    fontFamily: fonts.body,
     fontSize: 12,
-    color: '#888',
+    color: colors.textBody,
+    marginRight: 64,
   },
-  rowHeader: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 8,
-},
-statusBadge: {
-  flexShrink: 0,
-  fontSize: 11,
-  fontWeight: '600',
-  color: '#555',
-  backgroundColor: '#e5e5e5',
-  paddingHorizontal: 8,
-  paddingVertical: 4,
-  borderRadius: 12,
-  overflow: 'hidden',
-},
-viewToggle: {
-  flexDirection: 'row',
-  backgroundColor: '#e5e5e5',
-  borderRadius: 10,
-  marginHorizontal: 16,
-  marginBottom: 20,
-  padding: 3,
-},
-toggleButton: {
-  flex: 1,
-  alignItems: 'center',
-  paddingVertical: 8,
-  borderRadius: 8,
-},
-toggleButtonActive: {
-  backgroundColor: '#3b1f12',
-},
-toggleText: {
-  fontSize: 13,
-  fontWeight: '600',
-  color: '#555',
-},
-toggleTextActive: {
-  color: '#fff',
-},
-viewHeading: {
-  fontSize: 22,
-  fontWeight: '700',
-  color: '#222',
-  marginBottom: 20,
-},
-rangeToggle: {
-  alignSelf: 'flex-start',
-  flexDirection: 'row',
-  backgroundColor: '#f2f0ef',
-  borderRadius: 18,
-  padding: 3,
-  marginBottom: 12,
-},
-rangeButton: {
-  paddingHorizontal: 14,
-  paddingVertical: 7,
-  borderRadius: 15,
-},
-rangeButtonActive: {
-  backgroundColor: '#3b2419',
-},
-rangeText: {
-  fontSize: 12,
-  fontWeight: '600',
-  color: '#675f5b',
-},
-rangeTextActive: {
-  color: '#fff',
-},
-yearTitle: {
-  fontSize: 32,
-  fontWeight: '800',
-  color: '#30241f',
-  marginBottom: 16,
-},
-yearGrid: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  justifyContent: 'space-between',
-},
-monthCard: {
-  width: '31%',
-  backgroundColor: '#fff',
-  borderRadius: 10,
-  padding: 8,
-  marginBottom: 12,
-},
-monthName: {
-  fontSize: 14,
-  fontWeight: '700',
-  color: '#392b25',
-  marginBottom: 8,
-},
-daysGrid: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  gap: 3,
-},
-calendarDay: {
-  width: 9,
-  height: 9,
-  borderRadius: 2,
-},
-emptyDay: {
-  width: 9,
-  height: 9,
-},
-monthHeader: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: 20,
-},
-monthTitle: {
-  fontSize: 24,
-  fontWeight: '800',
-  color: '#30241f',
-},
-monthArrow: {
-  fontSize: 36,
-  color: '#3b2419',
-  paddingHorizontal: 12,
-},
-weekdayRow: {
-  flexDirection: 'row',
-  marginBottom: 8,
-},
-weekdayLabel: {
-  width: '14.285%',
-  textAlign: 'center',
-  fontSize: 12,
-  fontWeight: '700',
-  color: '#888',
-},
-monthDaysGrid: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-},
-monthDayCell: {
-  width: '14.285%',
-  aspectRatio: 1,
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: 8,
-},
-monthDayText: {
-  fontSize: 14,
-  fontWeight: '600',
-  color: '#30241f',
-},
-weekHeader: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: 18,
-},
-weekTitle: {
-  fontSize: 18,
-  fontWeight: '800',
-  color: '#30241f',
-},
-weekGrid: {
-  flexDirection: 'row',
-  gap: 5,
-  marginBottom: 24,
-},
-weekDay: {
-  flex: 1,
-  alignItems: 'center',
-  paddingVertical: 10,
-  borderRadius: 10,
-  backgroundColor: '#f2f2f0',
-},
-weekdayText: {
-  fontSize: 10,
-  fontWeight: '600',
-  color: '#888',
-  marginBottom: 5,
-},
-weekDateText: {
-  fontSize: 15,
-  fontWeight: '700',
-  color: '#30241f',
-},
-weekBrief: {
-  marginBottom: 16,
-},
-statusLegend: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  gap: 10,
-  marginBottom: 20,
-},
-legendItem: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 4,
-},
-legendColour: {
-  width: 10,
-  height: 10,
-  borderRadius: 3,
-},
-legendText: {
-  fontSize: 11,
-  color: '#666',
-},
+  empty: {
+    fontFamily: fonts.body,
+    fontSize: 13.5,
+    color: colors.textMuted,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 12,
+  },
+  emptyLeft: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+
+  // year
+  legend: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+  },
+  legendText: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.textStrong,
+  },
+  yearGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  mini: {
+    width: '31.6%',
+    padding: 10,
+    gap: 8,
+    borderRadius: radius.card,
+    backgroundColor: colors.white,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  miniHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+  },
+  miniName: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  miniCount: {
+    fontFamily: fonts.body,
+    fontSize: 10.5,
+    color: colors.textFaint,
+  },
+  miniGrid: {
+    gap: 2.5,
+  },
+  miniRow: {
+    flexDirection: 'row',
+    gap: 2.5,
+  },
+  miniCell: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 1.5,
+  },
+  best: {
+    backgroundColor: colors.green,
+    borderRadius: radius.card,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+    gap: 3,
+  },
+  bestTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 14.5,
+    color: colors.ink,
+  },
+  bestBody: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textBody,
+  },
 });

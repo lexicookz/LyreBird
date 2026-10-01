@@ -17,6 +17,8 @@ import {
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
 import { useLibrary } from './data/library';
+import { stageForBrief, suggestDate, useCalendar } from './data/calendar';
+import ScheduleSheet from './components/ScheduleSheet';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video, Brief, Clip } from './types';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -41,6 +43,9 @@ function AppContent() {
   const tabBarSpace = useTabBarSpace();
   const library = useLibrary();
   const videoImport = useVideoImport();
+  const calendar = useCalendar();
+  /** The brief whose schedule sheet is open, if any. */
+  const [schedulingBriefId, setSchedulingBriefId] = useState<string | null>(null);
 
   useEffect(() => {
     loadOnboarding().then(({ onboarded, brand }) => {
@@ -83,7 +88,7 @@ function AppContent() {
     setPushed(null);
   }
 
-  if (onboarding === 'loading' || !library.loaded) return null;
+  if (onboarding === 'loading' || !library.loaded || !calendar.loaded) return null;
 
   if (onboarding === 'opener') {
     return (
@@ -104,6 +109,27 @@ function AppContent() {
     );
   }
 
+  // Rendered over whichever screen opened it (the Calendar tab or a brief).
+  const schedulingBrief = mockBriefs.find((b) => b.id === schedulingBriefId);
+  const scheduleSheet = (
+    <ScheduleSheet
+      visible={!!schedulingBrief}
+      hook={schedulingBrief?.hook ?? ''}
+      existing={calendar.items.find((i) => i.briefId === schedulingBriefId)}
+      defaultStage={schedulingBriefId ? stageForBrief(schedulingBriefId) : 'TOFU'}
+      suggestedDate={suggestDate(calendar.items)}
+      onSave={(values) => {
+        if (schedulingBriefId) calendar.schedule({ briefId: schedulingBriefId, ...values });
+        setSchedulingBriefId(null);
+      }}
+      onRemove={() => {
+        if (schedulingBriefId) calendar.unschedule(schedulingBriefId);
+        setSchedulingBriefId(null);
+      }}
+      onClose={() => setSchedulingBriefId(null)}
+    />
+  );
+
   // Pushed screens take over the full screen, no tab bar underneath.
 
   if (pushed?.type === 'brandProfile') {
@@ -118,12 +144,17 @@ function AppContent() {
   }
 
   if (pushed?.type === 'brief') {
+    const briefId = pushed.brief?.id;
     return (
-      <BriefScreen
-        video={pushed.video}
-        existingBrief={pushed.brief}
-        onBack={handleClosePushed}
-      />
+      <>
+        <BriefScreen
+          video={pushed.video}
+          existingBrief={pushed.brief}
+          onBack={handleClosePushed}
+          onSchedule={briefId ? () => setSchedulingBriefId(briefId) : undefined}
+        />
+        {scheduleSheet}
+      </>
     );
   }
 
@@ -165,7 +196,14 @@ function AppContent() {
       case 'briefs':
         return <BriefsScreen onSelectBrief={handleSelectBrief} />;
       case 'calendar':
-        return <CalendarScreen onBack={() => setActiveTab('library')} />;
+        return (
+          <CalendarScreen
+            items={calendar.items}
+            brandName={brandSetup?.name}
+            onOpenBrandProfile={handleOpenBrandProfile}
+            onEditEntry={setSchedulingBriefId}
+          />
+        );
     }
   }
 
@@ -196,6 +234,7 @@ function AppContent() {
         onContinue={videoImport.continueFromSheet}
         onClose={videoImport.closeSheet}
       />
+      {scheduleSheet}
     </View>
   );
 }

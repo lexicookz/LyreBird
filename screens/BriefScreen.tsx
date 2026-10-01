@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video, Brief } from '../types';
 import { mockAnalyses } from '../data/mockVideos';
+import { PrimaryButton } from '../components/ui';
 
 function Field({
   label,
@@ -42,10 +43,13 @@ export default function BriefScreen({
   video,
   existingBrief,
   onBack,
+  onSchedule,
 }: {
   video: Video;
   existingBrief?: Brief;
   onBack: () => void;
+  /** Opens the schedule sheet. Only offered for a brief that already exists. */
+  onSchedule?: () => void;
 }) {
   const analysis = mockAnalyses.find((a) => a.clip_id === video.id);
 
@@ -97,6 +101,8 @@ export default function BriefScreen({
         <Pressable style={styles.saveButton} onPress={handleSave}>
           <Text style={styles.saveButtonText}>{saved ? 'Saved ✓' : 'Save Brief'}</Text>
         </Pressable>
+
+        {onSchedule && <PrimaryButton label="Schedule" onPress={onSchedule} style={{ marginTop: 10 }} />}
       </ScrollView>
     </SafeAreaView>
   );

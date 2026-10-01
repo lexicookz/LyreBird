@@ -40,8 +40,8 @@ describe('LibraryScreen', () => {
   test('headline counts saved clips and clips without a brief', async () => {
     const { getByText } = await renderLibrary();
 
-    // 5 sample clips; 2 of them have briefs in the mocks.
-    expect(getByText('5 saved,\n3 untouched')).toBeTruthy();
+    // 5 sample clips; 3 of them have briefs in the mocks.
+    expect(getByText('5 saved,\n2 untouched')).toBeTruthy();
     expect(getByText('Last import: 3 clips')).toBeTruthy();
     expect(getByText('5 results')).toBeTruthy();
   });
@@ -50,7 +50,7 @@ describe('LibraryScreen', () => {
     const { getByText, getAllByText } = await renderLibrary();
 
     expect(getByText("“I used to hit snooze 5 times. Here's what fixed it.”")).toBeTruthy();
-    expect(getAllByText('Brief ready').length).toBe(2);
+    expect(getAllByText('Brief ready').length).toBe(3);
     expect(getAllByText('Awareness').length).toBeGreaterThan(0);
   });
 
