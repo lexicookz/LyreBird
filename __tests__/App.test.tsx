@@ -1,7 +1,28 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import { Alert } from 'react-native';
 import App from '../App';
+
+jest.mock('expo-image-picker', () => ({
+  getMediaLibraryPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    canAskAgain: true,
+    status: 'undetermined',
+  })),
+  requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  launchImageLibraryAsync: jest.fn(async () => ({
+    canceled: false,
+    assets: [
+      { uri: 'file:///a.mov', fileName: 'a.mov', duration: 31_000, width: 1080, height: 1920 },
+      { uri: 'file:///b.mov', fileName: 'b.mov', duration: 44_000, width: 1080, height: 1920 },
+      { uri: 'file:///c.mov', fileName: 'c.mov', duration: 120_000, width: 1080, height: 1920 },
+    ],
+  })),
+}));
+
+jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 
 describe('App', () => {
   beforeEach(async () => {
@@ -27,13 +48,29 @@ describe('App', () => {
     expect(getByText('Calendar')).toBeTruthy();
   });
 
-  test('the + button in the tab bar opens Import', async () => {
+  test('a new library shows the empty state', async () => {
     await AsyncStorage.setItem('lyrebird.onboarded', 'true');
-    const { findByLabelText, findByText } = await render(<App />);
+    const { findByText } = await render(<App />);
+
+    expect(await findByText('Nothing saved yet')).toBeTruthy();
+  });
+
+  test('the + button imports videos from the camera roll and starts analysing them', async () => {
+    await AsyncStorage.setItem('lyrebird.onboarded', 'true');
+    const { findByLabelText, findByText, getByText } = await render(<App />);
 
     await fireEvent.press(await findByLabelText('Add videos'));
 
-    expect(await findByText('Import videos')).toBeTruthy();
+    // First time: our explainer, then the system permission prompt and picker.
+    expect(await findByText('We need to see your saved videos')).toBeTruthy();
+    await fireEvent.press(getByText('Continue'));
+    expect(ImagePicker.requestMediaLibraryPermissionsAsync).toHaveBeenCalled();
+
+    // The 2-minute video is over the 90-second cap and is left out.
+    expect(await findByText('2 videos selected')).toBeTruthy();
+    await fireEvent.press(getByText('Import'));
+
+    expect(await findByText('Analysing 2 new clips')).toBeTruthy();
   });
 
   test('skipping the opener goes straight to the app and is remembered', async () => {

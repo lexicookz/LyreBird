@@ -6,7 +6,6 @@ import VideoDetailScreen from './screens/VideoDetailScreen';
 import BriefScreen from './screens/BriefScreen';
 import BrandProfileScreen from './screens/BrandProfileScreen';
 import CalendarScreen from './screens/CalendarScreen';
-import ImportScreen from './screens/ImportScreen';
 import OpenerScreen from './screens/OpenerScreen';
 import BrandSetupScreen from './screens/BrandSetupScreen';
 import {
@@ -16,6 +15,8 @@ import {
   loadOnboarding,
 } from './data/brandSetup';
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
+import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
+import { useLibrary } from './data/library';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video, Brief, Clip } from './types';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -25,10 +26,9 @@ import { fontAssets } from './theme/fontAssets';
 
 // A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
 type PushedScreen =
-  | { type: 'detail'; video: Video }
+  | { type: 'detail'; clipId: string }
   | { type: 'brief'; video: Video; brief?: Brief }
-  | { type: 'brandProfile' }
-  | { type: 'import' };
+  | { type: 'brandProfile' };
 
 // First run: opener -> brand setup -> the app. Remembered on the device.
 type OnboardingStage = 'loading' | 'opener' | 'brand' | 'done';
@@ -39,6 +39,8 @@ function AppContent() {
   const [onboarding, setOnboarding] = useState<OnboardingStage>('loading');
   const [brandSetup, setBrandSetup] = useState<BrandSetup | null>(null);
   const tabBarSpace = useTabBarSpace();
+  const library = useLibrary();
+  const videoImport = useVideoImport();
 
   useEffect(() => {
     loadOnboarding().then(({ onboarded, brand }) => {
@@ -54,8 +56,8 @@ function AppContent() {
     completeOnboarding(setup).catch(() => {});
   }
 
-  function handleSelectVideo(video: Video) {
-    setPushed({ type: 'detail', video });
+  function handleSelectVideo(clip: Clip) {
+    setPushed({ type: 'detail', clipId: clip.id });
   }
 
   function handleSelectBrief(brief: Brief, clip: Clip) {
@@ -71,15 +73,17 @@ function AppContent() {
     setPushed({ type: 'brandProfile' });
   }
 
-  function handleOpenImport() {
-    setPushed({ type: 'import' });
+  function handleImport() {
+    library.importVideos(videoImport.pending);
+    videoImport.clearPending();
+    setActiveTab('library');
   }
 
   function handleClosePushed() {
     setPushed(null);
   }
 
-  if (onboarding === 'loading') return null;
+  if (onboarding === 'loading' || !library.loaded) return null;
 
   if (onboarding === 'opener') {
     return (
@@ -101,9 +105,6 @@ function AppContent() {
   }
 
   // Pushed screens take over the full screen, no tab bar underneath.
-  if (pushed?.type === 'import') {
-    return <ImportScreen onBack={handleClosePushed} />;
-  }
 
   if (pushed?.type === 'brandProfile') {
     return (
@@ -126,12 +127,16 @@ function AppContent() {
     );
   }
 
-  if (pushed?.type === 'detail') {
+  // Look the clip up each render so a finished analysis shows straight away.
+  const detailClip =
+    pushed?.type === 'detail' ? library.clips.find((c) => c.id === pushed.clipId) : undefined;
+  if (detailClip) {
     return (
       <VideoDetailScreen
-        video={pushed.video}
+        video={detailClip}
+        analysis={library.analyses.find((a) => a.clip_id === detailClip.id)}
         onBack={handleClosePushed}
-        onViewBrief={() => handleViewBriefFromDetail(pushed.video)}
+        onViewBrief={() => handleViewBriefFromDetail(detailClip)}
       />
     );
   }
@@ -140,22 +145,21 @@ function AppContent() {
   function renderTabContent() {
     switch (activeTab) {
       case 'library':
-        return (
-          <LibraryScreen
-            onSelectVideo={handleSelectVideo}
-            onOpenBrandProfile={handleOpenBrandProfile}
-            onOpenImport={handleOpenImport}
-            onOpenCalendar={() => setActiveTab('calendar')}
-          />
-        );
       case 'search':
-        // Temporary: reuses Library's search until Alicia's Search-tab design is confirmed.
+        // Search reuses the Library (with its search box) until the Search tab is designed.
         return (
           <LibraryScreen
+            clips={library.clips}
+            analyses={library.analyses}
+            lastImportCount={library.lastImportCount}
+            now={library.now}
+            brandName={brandSetup?.name}
+            focus={brandSetup?.focus}
             onSelectVideo={handleSelectVideo}
             onOpenBrandProfile={handleOpenBrandProfile}
-            onOpenImport={handleOpenImport}
-            onOpenCalendar={() => setActiveTab('calendar')}
+            onAddVideos={videoImport.start}
+            onLoadSamples={library.loadSamples}
+            onRetry={library.retryAnalysis}
           />
         );
       case 'briefs':
@@ -165,16 +169,32 @@ function AppContent() {
     }
   }
 
+  const isLibraryTab = activeTab === 'library' || activeTab === 'search';
+
   return (
     <View style={styles.container}>
-      {/* The bar floats over the bottom of the screen; keep content clear of it. */}
-      <View style={[styles.content, { paddingBottom: tabBarSpace }]}>
+      {/* The bar floats over the bottom of the screen. The Library scrolls under it
+          and pads itself; other tabs are kept clear of it here. */}
+      <View style={[styles.content, !isLibraryTab && { paddingBottom: tabBarSpace }]}>
         {renderTabContent()}
       </View>
       <BottomTabBar
         activeTab={activeTab}
         onChangeTab={setActiveTab}
-        onPressAdd={handleOpenImport}
+        onPressAdd={videoImport.start}
+      />
+      {videoImport.pending.length > 0 && (
+        <ImportBar
+          count={videoImport.pending.length}
+          onImport={handleImport}
+          onCancel={videoImport.clearPending}
+          bottom={tabBarSpace + 4}
+        />
+      )}
+      <PhotoAccessSheet
+        visible={videoImport.sheetVisible}
+        onContinue={videoImport.continueFromSheet}
+        onClose={videoImport.closeSheet}
       />
     </View>
   );

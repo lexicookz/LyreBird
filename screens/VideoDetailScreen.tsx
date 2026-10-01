@@ -2,7 +2,7 @@
 import React from 'react';
 import { View, Text, Image, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Clip } from '../types';
+import { Clip, TypedAnalysis } from '../types';
 import { mockAnalyses } from '../data/mockVideos';
 import { funnelStages } from '../theme';
 
@@ -17,15 +17,18 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 export default function VideoDetailScreen({
   video,
+  analysis: analysisProp,
   onBack,
   onViewBrief,
 }: {
   video: Clip;
+  /** The clip's analysis, if the caller has it; otherwise looked up in the mocks. */
+  analysis?: TypedAnalysis;
   onBack: () => void;
   onViewBrief: () => void;
 }) {
   const isReady = video.status === 'ready';
-  const analysis = mockAnalyses.find((a) => a.clip_id === video.id);
+  const analysis = analysisProp ?? mockAnalyses.find((a) => a.clip_id === video.id);
 
   return (
     <SafeAreaView style={styles.safeArea}>
