@@ -6,10 +6,10 @@ import {
   Image,
   FlatList,
   StyleSheet,
-  SafeAreaView,
   Pressable,
   TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { mockVideos, mockAnalyses } from '../data/mockVideos';
 import { Video } from '../types';
 
@@ -68,7 +68,10 @@ export default function LibraryScreen({
   });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={['top', 'left', 'right']}
+    >
       <View style={styles.headerRow}>
         <Text style={styles.header}>Library</Text>
         <View style={styles.headerLinks}>

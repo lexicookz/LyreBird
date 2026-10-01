@@ -1,6 +1,8 @@
 // screens/CalendarScreen.tsx
+// npx.cmd expo start --tunnel
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, SafeAreaView, StatusBar, } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { mockBriefs, mockCalendarEntries, mockClips } from '../data/mockVideos';
 import { Brief, CalendarEntry } from '../types';
 
@@ -490,7 +492,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: StatusBar.currentHeight ?? 0,
   },
   headerRow: {
     flexDirection: 'row',

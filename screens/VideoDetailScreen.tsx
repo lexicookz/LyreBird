@@ -1,6 +1,7 @@
 // screens/VideoDetailScreen.tsx
 import React from 'react';
-import { View, Text, Image, ScrollView, StyleSheet, SafeAreaView, Pressable } from 'react-native';
+import { View, Text, Image, ScrollView, StyleSheet, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Clip } from '../types';
 import { mockAnalyses } from '../data/mockVideos';
 
