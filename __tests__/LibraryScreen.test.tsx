@@ -2,6 +2,7 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import LibraryScreen from '../screens/LibraryScreen';
 import { sampleLibrary } from '../data/library';
+import { mockBriefs } from '../data/mockVideos';
 import type { Clip } from '../types';
 
 const NOW = Date.parse('2026-09-01T12:00:00Z');
@@ -11,6 +12,7 @@ async function renderLibrary(overrides: Partial<React.ComponentProps<typeof Libr
   const props: React.ComponentProps<typeof LibraryScreen> = {
     clips: sample.clips,
     analyses: sample.analyses,
+    briefClipIds: new Set(mockBriefs.map((b) => b.clip_id)),
     lastImportCount: 3,
     now: NOW,
     onSelectVideo: jest.fn(),

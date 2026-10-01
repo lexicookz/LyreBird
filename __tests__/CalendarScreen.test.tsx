@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import CalendarScreen from '../screens/CalendarScreen';
+import { mockBriefs, mockClips } from '../data/mockVideos';
 import { MONTHS, sampleCalendar, startOfWeek, suggestDate, toISODate, addDays } from '../data/calendar';
 
 async function renderCalendar() {
@@ -8,6 +9,8 @@ async function renderCalendar() {
   const screen = await render(
     <CalendarScreen
       items={sampleCalendar()}
+      briefs={mockBriefs}
+      clipFor={(id) => mockClips.find((c) => c.id === id)}
       brandName="Nima Studio"
       onOpenBrandProfile={jest.fn()}
       onEditEntry={onEditEntry}

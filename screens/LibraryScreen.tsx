@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomSheet from '../components/BottomSheet';
 import { PrimaryButton } from '../components/ui';
 import { useTabBarSpace } from '../components/BottomTabBar';
-import { mockBriefs } from '../data/mockVideos';
 import { analysisProgress } from '../data/library';
 import { colors, fonts, FUNNEL_ORDER, funnelStages, pagePadding, radius } from '../theme';
 import type { Clip, FunnelStage, TypedAnalysis } from '../types';
@@ -266,6 +265,7 @@ function Header({
 export default function LibraryScreen({
   clips,
   analyses,
+  briefClipIds,
   lastImportCount,
   now,
   brandName,
@@ -278,6 +278,8 @@ export default function LibraryScreen({
 }: {
   clips: Clip[];
   analyses: TypedAnalysis[];
+  /** Clips that already have a brief ("Brief ready"). */
+  briefClipIds: Set<string>;
   lastImportCount: number | null;
   /** Current time from the library hook; ticks while clips are analysing. */
   now: number;
@@ -305,7 +307,6 @@ export default function LibraryScreen({
     () => new Map(analyses.map((a) => [a.clip_id, a])),
     [analyses]
   );
-  const briefClipIds = useMemo(() => new Set(mockBriefs.map((b) => b.clip_id)), []);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();

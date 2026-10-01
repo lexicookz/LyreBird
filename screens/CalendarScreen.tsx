@@ -24,9 +24,9 @@ import {
   startOfWeek,
   toISODate,
 } from '../data/calendar';
-import { mockBriefs, mockClips } from '../data/mockVideos';
+import { shotsOf } from '../data/briefs';
 import { colors, fonts, FUNNEL_ORDER, funnelStages, pagePadding, radius } from '../theme';
-import type { Brief, FunnelStage } from '../types';
+import type { Brief, Clip, FunnelStage } from '../types';
 
 type Range = 'week' | 'month' | 'year';
 
@@ -51,10 +51,10 @@ function dayLabel(iso: string) {
 }
 
 /** "4 shots · 0:28 · caption ready", or "Shot list not written". */
-function briefMeta(brief: Brief) {
-  const shots = Array.isArray(brief.shot_list) ? brief.shot_list.length : 0;
+function briefMeta(brief: Brief, clip: Clip | undefined) {
+  const shots = shotsOf(brief).length;
   if (shots === 0) return 'Shot list not written';
-  const seconds = mockClips.find((c) => c.id === brief.clip_id)?.duration_seconds;
+  const seconds = clip?.duration_seconds;
   return [
     `${shots} shot${shots === 1 ? '' : 's'}`,
     seconds ? `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}` : null,
@@ -69,10 +69,12 @@ function briefMeta(brief: Brief) {
 function EntryCard({
   item,
   brief,
+  clip,
   onPress,
 }: {
   item: CalendarItem;
   brief: Brief;
+  clip: Clip | undefined;
   onPress: () => void;
 }) {
   return (
@@ -94,7 +96,7 @@ function EntryCard({
         </View>
       </View>
       <Text style={styles.entryHook}>“{brief.hook}”</Text>
-      <Text style={styles.entryMeta}>{briefMeta(brief)}</Text>
+      <Text style={styles.entryMeta}>{briefMeta(brief, clip)}</Text>
     </Pressable>
   );
 }
@@ -155,11 +157,16 @@ function MiniMonth({
 
 export default function CalendarScreen({
   items,
+  briefs,
+  clipFor,
   brandName,
   onOpenBrandProfile,
   onEditEntry,
 }: {
   items: CalendarItem[];
+  briefs: Brief[];
+  /** For each entry's video length. */
+  clipFor: (clipId: string) => Clip | undefined;
   brandName?: string;
   onOpenBrandProfile: () => void;
   /** Opens the schedule sheet for an entry's brief. */
@@ -172,7 +179,7 @@ export default function CalendarScreen({
   const [anchor, setAnchor] = useState(today);
   const [selectedISO, setSelectedISO] = useState(todayISO);
 
-  const briefsById = useMemo(() => new Map(mockBriefs.map((b) => [b.id, b])), []);
+  const briefsById = useMemo(() => new Map(briefs.map((b) => [b.id, b])), [briefs]);
   const entries = useMemo(
     () =>
       items
@@ -197,6 +204,7 @@ export default function CalendarScreen({
         key={item.briefId}
         item={item}
         brief={briefsById.get(item.briefId)!}
+        clip={clipFor(briefsById.get(item.briefId)!.clip_id)}
         onPress={() => onEditEntry(item.briefId)}
       />
     );

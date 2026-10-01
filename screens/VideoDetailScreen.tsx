@@ -1,112 +1,172 @@
 // screens/VideoDetailScreen.tsx
-import React from 'react';
-import { View, Text, Image, ScrollView, StyleSheet, Pressable } from 'react-native';
+// Figma: "Content analysis" ("Why this one works", 18:1102). Shows a clip's
+// analysis and leads to "Adapt for my brand".
+import React, { useState } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Clip, TypedAnalysis } from '../types';
-import { mockAnalyses } from '../data/mockVideos';
-import { funnelStages } from '../theme';
+import { BackButton, Eyebrow } from '../components/ui';
+import { colors, fonts, funnelStages, pagePadding, radius } from '../theme';
+import type { Clip, FormatTag, TypedAnalysis, VideoFormat } from '../types';
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{label}</Text>
-      {children}
-    </View>
-  );
+const FORMAT_LABELS: Record<VideoFormat, string> = {
+  talking_head: 'Talking head',
+  voiceover: 'Voiceover',
+  text_overlay: 'Text on screen',
+  skit: 'Skit',
+  other: 'Other format',
+};
+
+const FORMAT_TAG_LABELS: Record<FormatTag, string> = {
+  ugc_testimonial: 'UGC testimonial',
+  founder_pov: 'Founder POV',
+  problem_agitate_solve: 'Problem, agitate, solve',
+};
+
+const BEATS_PREVIEW = 4;
+
+function formatDuration(seconds: number | null) {
+  if (!seconds) return null;
+  const s = Math.round(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 export default function VideoDetailScreen({
   video,
-  analysis: analysisProp,
+  analysis,
+  hasBrief,
   onBack,
-  onViewBrief,
+  onAdapt,
 }: {
   video: Clip;
-  /** The clip's analysis, if the caller has it; otherwise looked up in the mocks. */
   analysis?: TypedAnalysis;
+  /** Whether a brief already exists for this clip; the button then opens it. */
+  hasBrief: boolean;
   onBack: () => void;
-  onViewBrief: () => void;
+  onAdapt: () => void;
 }) {
-  const isReady = video.status === 'ready';
-  const analysis = analysisProp ?? mockAnalyses.find((a) => a.clip_id === video.id);
+  const [showAllBeats, setShowAllBeats] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+
+  const payload = video.status === 'ready' ? analysis?.payload : undefined;
+  const stage = payload ? funnelStages[payload.funnelStage] : undefined;
+  const beats = payload?.shotBeats ?? [];
+  const shownBeats = showAllBeats ? beats : beats.slice(0, BEATS_PREVIEW);
+  const words = payload?.transcript.trim().split(/\s+/).filter(Boolean).length ?? 0;
+  const meta = [formatDuration(video.duration_seconds), video.title].filter(Boolean).join(' · ');
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <Pressable onPress={onBack} style={styles.backButton}>
-        <Text style={styles.backText}>← Back</Text>
-      </Pressable>
-      <Pressable onPress={onViewBrief} style={styles.backButton}>
-        <Text style={styles.briefButtonText}>View / Edit Brief</Text>
-      </Pressable>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Image source={{ uri: video.thumbnail_url ?? undefined }} style={styles.hero} />
-
-        <Text style={styles.title}>{video.title}</Text>
-        <Text style={styles.status}>{video.status}</Text>
-
-        <View style={styles.tagRow}>
-          {video.tags.map((tag) => (
-            <View key={tag} style={styles.tagChip}>
-              <Text style={styles.tagText}>{tag}</Text>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.topRow}>
+          <BackButton onPress={onBack} />
+          {stage && (
+            <View style={[styles.stagePill, { backgroundColor: stage.color }]}>
+              <View style={styles.stageDot} />
+              <Text style={styles.stageText}>{stage.label}</Text>
             </View>
-          ))}
+          )}
         </View>
 
-        {!(isReady && analysis) && (
-          <View style={styles.placeholderBox}>
-            <Text style={styles.placeholderText}>
+        <View style={styles.heading}>
+          {video.thumbnail_url ? (
+            <Image source={{ uri: video.thumbnail_url }} style={styles.thumb} />
+          ) : (
+            <View style={styles.thumb} />
+          )}
+          <View style={{ flex: 1, gap: 6 }}>
+            <Text style={styles.title}>Why this one works</Text>
+            <Text style={styles.meta} numberOfLines={2}>{meta}</Text>
+            {payload && (
+              <View style={styles.tags}>
+                <View style={styles.tag}>
+                  <Text style={styles.tagText}>{FORMAT_LABELS[payload.format] ?? payload.format}</Text>
+                </View>
+                {payload.formatTag && (
+                  <View style={styles.tag}>
+                    <Text style={styles.tagText}>{FORMAT_TAG_LABELS[payload.formatTag]}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+
+        {!payload ? (
+          <View style={styles.pending}>
+            <Text style={styles.pendingText}>
               {video.status === 'processing'
-                ? 'Analysis is still processing…'
-                : video.status === 'failed'
-                  ? 'Analysis failed for this video.'
-                  : 'Analysis not available yet for this video.'}
+                ? 'Still analysing. This usually takes under a minute.'
+                : "We couldn't analyse this one. Try again from your library."}
             </Text>
           </View>
-        )}
-
-        {isReady && analysis && (
+        ) : (
           <>
-            <Section label="Hook">
-              <Text style={styles.bodyText}>{analysis.payload.hook}</Text>
-            </Section>
-
-            <Section label="Transcript">
-              <Text style={styles.bodyText}>{analysis.payload.transcript}</Text>
-            </Section>
-
-            <Section label="On-screen text">
-              <Text style={styles.bodyText}>{analysis.payload.onScreenText}</Text>
-            </Section>
-
-            <Section label="Shot beats">
-              {analysis.payload.shotBeats?.map((beat, i) => (
-                <Text key={i} style={styles.listItem}>{`${i + 1}. ${beat}`}</Text>
-              ))}
-            </Section>
-
-            <Section label="Pacing">
-              <Text style={styles.bodyText}>{analysis.payload.pacing}</Text>
-            </Section>
-
-            <Section label="CTA">
-              <Text style={styles.bodyText}>{analysis.payload.cta}</Text>
-            </Section>
-
-            <View style={styles.metaRow}>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaLabel}>Format</Text>
-                <Text style={styles.metaValue}>{analysis.payload.format}</Text>
-              </View>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaLabel}>Funnel stage</Text>
-                <Text style={styles.metaValue}>
-                  {funnelStages[analysis.payload.funnelStage]?.label ?? analysis.payload.funnelStage}
-                </Text>
-              </View>
+            <View style={[styles.card, { backgroundColor: colors.green, gap: 8 }]}>
+              <Eyebrow color={colors.textBody}>Hook · 0:00–0:03 verbatim</Eyebrow>
+              <Text style={styles.hook}>“{payload.hook}”</Text>
+              {!!payload.pacing && <Text style={styles.hookNote}>{payload.pacing}</Text>}
             </View>
+
+            {beats.length > 0 && (
+              <View style={{ gap: 4 }}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionLabel}>
+                    SHOT BEATS · {shownBeats.length} OF {beats.length}
+                  </Text>
+                  {beats.length > BEATS_PREVIEW && (
+                    <Pressable onPress={() => setShowAllBeats(!showAllBeats)} hitSlop={8} accessibilityRole="button">
+                      <Text style={styles.sectionLink}>{showAllBeats ? 'Show less' : 'Show all'}</Text>
+                    </Pressable>
+                  )}
+                </View>
+                {shownBeats.map((beat, i) => (
+                  <View key={i} style={[styles.beat, i > 0 && styles.beatDivider]}>
+                    <Text style={styles.beatIndex}>{String(i + 1).padStart(2, '0')}</Text>
+                    <Text style={styles.beatText}>{beat}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {!!payload.cta && (
+              <View style={[styles.card, { backgroundColor: colors.pink, gap: 6 }]}>
+                <Eyebrow color={colors.textBody}>Call to action</Eyebrow>
+                <Text style={styles.cardBody}>{payload.cta}</Text>
+              </View>
+            )}
+
+            {!!payload.transcript && (
+              <Pressable
+                onPress={() => setTranscriptOpen(!transcriptOpen)}
+                style={styles.transcript}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: transcriptOpen }}
+              >
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={styles.sectionLabel}>TRANSCRIPT · {words} WORDS</Text>
+                  <Text style={styles.cardBody} numberOfLines={transcriptOpen ? undefined : 1}>
+                    {payload.transcript}
+                  </Text>
+                </View>
+                <Text style={styles.open}>{transcriptOpen ? 'Close' : 'Open'}</Text>
+              </Pressable>
+            )}
           </>
         )}
       </ScrollView>
+
+      {payload && (
+        <View style={styles.footer}>
+          <Pressable
+            onPress={onAdapt}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.adapt, pressed && { opacity: 0.9 }]}
+          >
+            <Text style={styles.adaptText}>{hasBrief ? 'Open my brief' : 'Adapt for my brand'}</Text>
+            <View style={styles.adaptChevron} />
+          </Pressable>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -114,111 +174,192 @@ export default function VideoDetailScreen({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
-  backButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  scroll: {
+    paddingHorizontal: pagePadding,
+    paddingTop: 12,
+    paddingBottom: 24,
+    gap: 16,
   },
-  backText: {
-    fontSize: 16,
-    color: '#222',
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  briefButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#222',
+  stagePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
   },
-  scrollContent: {
-    paddingBottom: 40,
+  stageDot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.textStrong,
   },
-  hero: {
-    width: '100%',
-    height: 260,
+  stageText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.ink,
+  },
+  heading: {
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'flex-start',
+  },
+  thumb: {
+    width: 68,
+    height: 90,
+    borderRadius: radius.card,
+    backgroundColor: '#e9e9e8',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    fontFamily: fonts.display,
+    fontSize: 26,
+    lineHeight: 27,
+    letterSpacing: -1,
+    color: colors.ink,
   },
-  status: {
-    fontSize: 13,
-    color: '#888',
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    textTransform: 'capitalize',
+  meta: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.textFaint,
   },
-  tagRow: {
+  tags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    paddingHorizontal: 16,
-    paddingTop: 10,
   },
-  tagChip: {
-    backgroundColor: '#e0e0e0',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  tag: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.track,
   },
   tagText: {
-    fontSize: 11,
-    color: '#333',
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.textStrong,
   },
-  placeholderBox: {
-    margin: 16,
-    padding: 16,
-    borderRadius: 10,
-    backgroundColor: '#f5f5f5',
-  },
-  placeholderText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  section: {
+  card: {
+    borderRadius: radius.card,
     paddingHorizontal: 16,
-    paddingTop: 20,
+    paddingVertical: 15,
   },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#999',
-    textTransform: 'uppercase',
-    marginBottom: 6,
+  hook: {
+    fontFamily: fonts.heading,
+    fontSize: 19,
+    lineHeight: 24,
+    letterSpacing: -0.4,
+    color: colors.ink,
   },
-  bodyText: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#222',
+  hookNote: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: colors.textBody,
   },
-  listItem: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#222',
-  },
-  metaRow: {
+  sectionHeader: {
     flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 24,
-  },
-  metaChip: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
-    padding: 12,
-  },
-  metaLabel: {
-    fontSize: 11,
-    color: '#999',
-    textTransform: 'uppercase',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 4,
   },
-  metaValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#222',
-    textTransform: 'capitalize',
+  sectionLabel: {
+    fontFamily: fonts.body,
+    fontSize: 10.5,
+    letterSpacing: 1,
+    color: colors.textPlaceholder,
+  },
+  sectionLink: {
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.textFaint,
+  },
+  beat: {
+    flexDirection: 'row',
+    gap: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  beatDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth * 2,
+    borderTopColor: 'rgba(51,36,28,0.07)',
+  },
+  beatIndex: {
+    width: 22,
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.textFaint,
+    paddingTop: 1,
+  },
+  beatText: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 13.5,
+    lineHeight: 19,
+    color: colors.textStrong,
+  },
+  cardBody: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textStrong,
+  },
+  transcript: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: radius.card,
+    backgroundColor: '#f4f3f1',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  open: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  pending: {
+    borderRadius: radius.card,
+    backgroundColor: colors.field,
+    padding: 16,
+  },
+  pendingText: {
+    fontFamily: fonts.body,
+    fontSize: 13.5,
+    lineHeight: 20,
+    color: colors.textMuted,
+  },
+  footer: {
+    paddingHorizontal: pagePadding,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  adapt: {
+    height: 54,
+    borderRadius: radius.pill,
+    backgroundColor: colors.ink,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  adaptText: {
+    fontFamily: fonts.heading,
+    fontSize: 15.5,
+    color: colors.cream,
+  },
+  adaptChevron: {
+    width: 8,
+    height: 8,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderColor: colors.cream,
+    transform: [{ rotate: '45deg' }],
   },
 });
