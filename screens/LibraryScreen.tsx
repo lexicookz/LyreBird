@@ -12,13 +12,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { mockVideos, mockAnalyses } from '../data/mockVideos';
 import { Video } from '../types';
+import { FUNNEL_ORDER, funnelStages } from '../theme';
 
-// Maps the stored pipeline values to the friendly labels Alicia's designs use.
 const FUNNEL_FILTERS: { key: 'all' | 'TOFU' | 'MOFU' | 'BOFU'; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'TOFU', label: 'Awareness' },
-  { key: 'MOFU', label: 'Consider' },
-  { key: 'BOFU', label: 'Convert' },
+  ...FUNNEL_ORDER.map((stage) => ({ key: stage, label: funnelStages[stage].label })),
 ];
 
 function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (video: Video) => void }) {

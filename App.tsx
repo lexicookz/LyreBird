@@ -7,10 +7,13 @@ import BriefScreen from './screens/BriefScreen';
 import BrandProfileScreen from './screens/BrandProfileScreen';
 import CalendarScreen from './screens/CalendarScreen';
 import ImportScreen from './screens/ImportScreen';
-import BottomTabBar, { TabKey } from './components/BottomTabBar';
+import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video, Brief, Clip } from './types';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
+import { colors } from './theme';
+import { fontAssets } from './theme/fontAssets';
 
 // A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
 type PushedScreen =
@@ -22,6 +25,7 @@ type PushedScreen =
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabKey>('library');
   const [pushed, setPushed] = useState<PushedScreen | null>(null);
+  const tabBarSpace = useTabBarSpace();
 
   function handleSelectVideo(video: Video) {
     setPushed({ type: 'detail', video });
@@ -113,8 +117,15 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.content}>{renderTabContent()}</View>
-      <BottomTabBar activeTab={activeTab} onChangeTab={setActiveTab} />
+      {/* The bar floats over the bottom of the screen; keep content clear of it. */}
+      <View style={[styles.content, { paddingBottom: tabBarSpace }]}>
+        {renderTabContent()}
+      </View>
+      <BottomTabBar
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
+        onPressAdd={handleOpenImport}
+      />
     </View>
   );
 }
@@ -122,6 +133,7 @@ function AppContent() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.white,
   },
   content: {
     flex: 1,
@@ -129,6 +141,12 @@ const styles = StyleSheet.create({
 });
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts(fontAssets);
+
+  // Hold the first frame until Sora and Inter are ready so text doesn't jump
+  // from the system font. If loading fails, carry on with the system font.
+  if (!fontsLoaded && !fontError) return null;
+
   return (
     <SafeAreaProvider>
       <AppContent />

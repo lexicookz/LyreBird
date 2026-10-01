@@ -4,6 +4,7 @@ import { View, Text, Image, ScrollView, StyleSheet, Pressable } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Clip } from '../types';
 import { mockAnalyses } from '../data/mockVideos';
+import { funnelStages } from '../theme';
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -95,7 +96,9 @@ export default function VideoDetailScreen({
               </View>
               <View style={styles.metaChip}>
                 <Text style={styles.metaLabel}>Funnel stage</Text>
-                <Text style={styles.metaValue}>{analysis.payload.funnelStage}</Text>
+                <Text style={styles.metaValue}>
+                  {funnelStages[analysis.payload.funnelStage]?.label ?? analysis.payload.funnelStage}
+                </Text>
               </View>
             </View>
           </>
