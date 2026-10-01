@@ -8,6 +8,7 @@ describe('LibraryScreen', () => {
             <LibraryScreen
                 onSelectVideo={() => { }}
                 onOpenBrandProfile={() => { }}
+                onOpenImport={() => { }}
                 onOpenCalendar={() => { }}
             />
         );
@@ -21,6 +22,7 @@ describe('LibraryScreen', () => {
             <LibraryScreen
                 onSelectVideo={() => { }}
                 onOpenBrandProfile={() => { }}
+                onOpenImport={() => { }}
                 onOpenCalendar={() => { }}
             />
         );
@@ -37,6 +39,7 @@ describe('LibraryScreen', () => {
             <LibraryScreen
                 onSelectVideo={() => { }}
                 onOpenBrandProfile={() => { }}
+                onOpenImport={() => { }}
                 onOpenCalendar={() => { }}
             />
         );

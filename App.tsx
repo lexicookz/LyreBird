@@ -6,6 +6,7 @@ import VideoDetailScreen from './screens/VideoDetailScreen';
 import BriefScreen from './screens/BriefScreen';
 import BrandProfileScreen from './screens/BrandProfileScreen';
 import CalendarScreen from './screens/CalendarScreen';
+import ImportScreen from './screens/ImportScreen';
 import BottomTabBar, { TabKey } from './components/BottomTabBar';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video, Brief, Clip } from './types';
@@ -14,7 +15,8 @@ import { Video, Brief, Clip } from './types';
 type PushedScreen =
   | { type: 'detail'; video: Video }
   | { type: 'brief'; video: Video; brief?: Brief }
-  | { type: 'brandProfile' };
+  | { type: 'brandProfile' }
+  | { type: 'import' };
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('library');
@@ -37,11 +39,19 @@ export default function App() {
     setPushed({ type: 'brandProfile' });
   }
 
+  function handleOpenImport() {
+    setPushed({ type: 'import' });
+  }
+
   function handleClosePushed() {
     setPushed(null);
   }
 
   // Pushed screens take over the full screen, no tab bar underneath.
+  if (pushed?.type === 'import') {
+    return <ImportScreen onBack={handleClosePushed} />;
+  }
+
   if (pushed?.type === 'brandProfile') {
     return (
       <BrandProfileScreen
@@ -79,6 +89,7 @@ export default function App() {
           <LibraryScreen
             onSelectVideo={handleSelectVideo}
             onOpenBrandProfile={handleOpenBrandProfile}
+            onOpenImport={handleOpenImport}
             onOpenCalendar={() => setActiveTab('calendar')}
           />
         );
@@ -88,6 +99,7 @@ export default function App() {
           <LibraryScreen
             onSelectVideo={handleSelectVideo}
             onOpenBrandProfile={handleOpenBrandProfile}
+            onOpenImport={handleOpenImport}
             onOpenCalendar={() => setActiveTab('calendar')}
           />
         );
