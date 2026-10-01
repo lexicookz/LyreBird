@@ -1,6 +1,7 @@
 // screens/BriefsScreen.tsx
 import React from 'react';
-import { View, Text, Image, FlatList, StyleSheet, SafeAreaView, Pressable } from 'react-native';
+import { View, Text, Image, FlatList, StyleSheet, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { mockBriefs, mockClips } from '../data/mockVideos';
 import { Brief, Clip } from '../types';
 
@@ -29,7 +30,10 @@ export default function BriefsScreen({
   onSelectBrief: (brief: Brief, clip: Clip) => void;
 }) {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={['top', 'left', 'right']}
+    >
       <Text style={styles.header}>Briefs</Text>
 
       {mockBriefs.length === 0 ? (

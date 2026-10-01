@@ -7,8 +7,8 @@ import {
   ScrollView,
   Pressable,
   StyleSheet,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandProfile } from '../types';
 
 function Field({
