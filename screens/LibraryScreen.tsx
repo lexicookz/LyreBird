@@ -43,10 +43,12 @@ function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (vid
 export default function LibraryScreen({
   onSelectVideo,
   onOpenBrandProfile,
+  onOpenImport,
   onOpenCalendar,
 }: {
   onSelectVideo: (video: Video) => void;
   onOpenBrandProfile: () => void;
+  onOpenImport: () => void;
   onOpenCalendar: () => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,6 +74,9 @@ export default function LibraryScreen({
       <View style={styles.headerRow}>
         <Text style={styles.header}>Library</Text>
         <View style={styles.headerLinks}>
+          <Pressable onPress={onOpenImport}>
+            <Text style={styles.headerLink}>Import</Text>
+          </Pressable>
           <Pressable onPress={onOpenBrandProfile}>
             <Text style={styles.headerLink}>Brand Profile</Text>
           </Pressable>
