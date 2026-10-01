@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { ResizeMode, Video } from 'expo-av';
+
 
 export default function ImportScreen({ onBack }: { onBack: () => void }) {
   const [videos, setVideos] = useState<ImagePicker.ImagePickerAsset[]>([]);
@@ -53,7 +53,7 @@ export default function ImportScreen({ onBack }: { onBack: () => void }) {
         ) : (
           videos.map((video, index) => (
             <View key={`${video.uri}-${index}`} style={styles.videoRow}>
-              <Video source={{ uri: video.uri }} style={styles.thumbnail} resizeMode={ResizeMode.COVER} useNativeControls={false} />
+              <View style={styles.thumbnail} />
               <View style={styles.videoInfo}>
                 <Text style={styles.videoName} numberOfLines={1}>{video.fileName || `Video ${index + 1}`}</Text>
                 <Text style={styles.videoMeta}>{video.duration ? `${Math.round(video.duration / 1000)} sec` : 'Ready to import'}</Text>
