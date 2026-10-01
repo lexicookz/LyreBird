@@ -29,9 +29,9 @@
   },
   "private": true,
   "jest": {
-  "preset": "jest-expo",
-  "setupFilesAfterEnv": [
-    "<rootDir>/jest.setup.ts"
-  ]
-}
+    "preset": "jest-expo",
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.ts"
+    ]
+  }
 }

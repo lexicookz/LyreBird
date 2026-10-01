@@ -10,6 +10,7 @@ import BottomTabBar, { TabKey } from './components/BottomTabBar';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video, Brief, Clip } from './types';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import ImportScreen from './screens/ImportScreen';
 
 // A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
 type PushedScreen =
@@ -75,6 +76,8 @@ function AppContent() {
   // Otherwise, render the active tab with the persistent bottom bar.
   function renderTabContent() {
     switch (activeTab) {
+      case 'import':
+        return <ImportScreen />;
       case 'library':
         return (
           <LibraryScreen

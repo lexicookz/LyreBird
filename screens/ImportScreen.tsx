@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { ResizeMode, Video } from 'expo-av';
 
 export default function ImportScreen() {
   const [videos, setVideos] = useState<ImagePicker.ImagePickerAsset[]>([]);
@@ -51,7 +50,9 @@ export default function ImportScreen() {
         ) : (
           videos.map((video, index) => (
             <View key={`${video.uri}-${index}`} style={styles.videoRow}>
-              <Video source={{ uri: video.uri }} style={styles.thumbnail} resizeMode={ResizeMode.COVER} useNativeControls={false} />
+              <View style={styles.thumbnailPlaceholder}>
+                <Text style={styles.thumbnailText}>▶</Text>
+              </View>
               <View style={styles.videoInfo}>
                 <Text style={styles.videoName} numberOfLines={1}>{video.fileName || `Video ${index + 1}`}</Text>
                 <Text style={styles.videoMeta}>{video.duration ? `${Math.round(video.duration / 1000)} sec` : 'Ready to import'}</Text>
@@ -93,7 +94,8 @@ const styles = StyleSheet.create({
   emptyTitle: { color: '#434458', fontSize: 14, fontWeight: '700' },
   emptyCopy: { color: '#9697A6', fontSize: 12, marginTop: 5 },
   videoRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 14, padding: 10, marginBottom: 9, borderWidth: 1, borderColor: '#EEEEF3' },
-  thumbnail: { width: 62, height: 54, borderRadius: 9, backgroundColor: '#E9E8F2' },
+  thumbnailPlaceholder: { width: 62, height: 54, borderRadius: 9, backgroundColor: '#E9E8F2', alignItems: 'center', justifyContent: 'center' },
+  thumbnailText: { color: '#6D62E8', fontSize: 18, fontWeight: '700' },
   videoInfo: { flex: 1, marginHorizontal: 12 },
   videoName: { color: '#25263A', fontSize: 14, fontWeight: '700' },
   videoMeta: { color: '#9293A2', fontSize: 12, marginTop: 5 },

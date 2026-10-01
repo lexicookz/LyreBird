@@ -3,9 +3,10 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export type TabKey = 'library' | 'search' | 'briefs' | 'calendar';
+export type TabKey = 'import' | 'library' | 'search' | 'briefs' | 'calendar';
 
 const TABS: { key: TabKey; label: string }[] = [
+    { key: 'import', label: 'Import' },
     { key: 'library', label: 'Library' },
     { key: 'search', label: 'Search' },
     { key: 'briefs', label: 'Briefs' },
