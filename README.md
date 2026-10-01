@@ -24,13 +24,19 @@ Scan the QR code with your phone's camera (iOS) or the Expo Go app (Android).
 
 ## What's built so far
 
-- **Library** — list of videos with thumbnails, status, tags
+- **Bottom tab navigation** — Library / Search / Briefs / Calendar, persistent across the app
+- **Library** — list of videos with thumbnails, status, tags, search and funnel-stage filtering
 - **Video Detail** — AI breakdown (hook, transcript, shot beats, pacing, CTA, funnel stage)
+- **Briefs** — list of all briefs across videos
 - **Brief** — editable hook, script, shot list, caption, CTA
 - **Brand Profile** — editable name, product, audience, tone
 - **Calendar** — scheduled briefs grouped by date
 
 Screens currently run on mock data shaped to match the real Supabase schema (BE-27) — swapping in live queries is a low-friction change since the shapes already match.
+
+Note: the Search tab currently mirrors the Library screen as a placeholder, pending design confirmation.
+
+Supabase schema (BE-27) — swapping in live queries is a low-friction change since the shapes already match.
 
 ## Tech stack
 

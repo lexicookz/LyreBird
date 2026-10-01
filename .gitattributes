@@ -1,0 +1,3 @@
+# Migration bodies are stored verbatim in pg_proc; byte-exact line endings
+# matter to schema diffing, so never convert EOLs here.
+supabase/migrations/*.sql -text

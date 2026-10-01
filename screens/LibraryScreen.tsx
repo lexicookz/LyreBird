@@ -72,9 +72,6 @@ export default function LibraryScreen({
       <View style={styles.headerRow}>
         <Text style={styles.header}>Library</Text>
         <View style={styles.headerLinks}>
-          <Pressable onPress={onOpenCalendar}>
-            <Text style={styles.headerLink}>Calendar</Text>
-          </Pressable>
           <Pressable onPress={onOpenBrandProfile}>
             <Text style={styles.headerLink}>Brand Profile</Text>
           </Pressable>
