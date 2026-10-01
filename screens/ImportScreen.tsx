@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Ale
 import * as ImagePicker from 'expo-image-picker';
 import { ResizeMode, Video } from 'expo-av';
 
-export default function ImportScreen() {
+export default function ImportScreen({ onBack }: { onBack: () => void }) {
   const [videos, setVideos] = useState<ImagePicker.ImagePickerAsset[]>([]);
 
   const chooseVideos = async () => {
@@ -25,6 +25,9 @@ export default function ImportScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
+        <TouchableOpacity onPress={onBack} style={{ marginBottom: 12 }}>
+          <Text style={{ fontSize: 15, color: '#6D62E8', fontWeight: '600' }}>← Back</Text>
+        </TouchableOpacity>
         <Text style={styles.eyebrow}>YOUR LIBRARY</Text>
         <Text style={styles.title}>Import videos</Text>
         <Text style={styles.subtitle}>Choose clips from your camera roll to add to your project.</Text>
