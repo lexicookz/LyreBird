@@ -220,7 +220,18 @@ export function useLibrary() {
     [update]
   );
 
-  return { ...state, loaded, now, importVideos, loadSamples, retryAnalysis };
+  /** Removes a clip and its analysis. Briefs written from it are kept. */
+  const removeClip = useCallback(
+    (clipId: string) =>
+      update((s) => ({
+        ...s,
+        clips: s.clips.filter((c) => c.id !== clipId),
+        analyses: s.analyses.filter((a) => a.clip_id !== clipId),
+      })),
+    [update]
+  );
+
+  return { ...state, loaded, now, importVideos, loadSamples, retryAnalysis, removeClip };
 }
 
 export type Library = ReturnType<typeof useLibrary>;

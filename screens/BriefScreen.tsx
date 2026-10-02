@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton, Eyebrow } from '../components/ui';
-import { BriefEdit, shotsOf } from '../data/briefs';
+import { BriefEdit, briefAsText, shotsOf } from '../data/briefs';
 import { CALENDAR_STATUSES, CalendarItem } from '../data/calendar';
 import { colors, fonts, pagePadding, radius } from '../theme';
 import type { Brief, Clip } from '../types';
@@ -34,19 +34,6 @@ function formatDuration(seconds: number | null | undefined) {
   if (!seconds) return null;
   const s = Math.round(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-/** The brief as plain text, for sharing to notes, email or a teammate. */
-function briefAsText(brief: Brief, shots: string[]) {
-  return [
-    `HOOK\n${brief.hook ?? ''}`,
-    shots.length ? `SHOT LIST\n${shots.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : null,
-    brief.script ? `SCRIPT\n${brief.script}` : null,
-    brief.caption ? `CAPTION\n${brief.caption}` : null,
-    brief.cta ? `CTA\n${brief.cta}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
 }
 
 export default function BriefScreen({
@@ -212,7 +199,7 @@ export default function BriefScreen({
             <Text style={styles.scheduleText}>{entry ? 'Reschedule' : 'Schedule'}</Text>
           </Pressable>
           <Pressable
-            onPress={() => Share.share({ message: briefAsText(brief, filledShots) })}
+            onPress={() => Share.share({ message: briefAsText({ ...brief, shot_list: filledShots }) })}
             accessibilityRole="button"
             accessibilityLabel="Share brief"
             style={styles.share}

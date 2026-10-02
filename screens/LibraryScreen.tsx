@@ -3,6 +3,7 @@
 // The data comes from data/library.ts via App.tsx; this screen only displays it.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Easing,
   Image,
@@ -28,6 +29,18 @@ type SortKey = 'focus' | 'newest' | 'oldest';
 const COLUMN_GAP = 9;
 
 // ---------- small helpers ----------
+
+/** Asks before deleting; used by the Library cards and the analysis screen. */
+export function confirmDeleteClip(clip: Clip, onConfirm: () => void) {
+  Alert.alert(
+    'Delete this video?',
+    `"${clip.title ?? 'This video'}" and its analysis will be removed. Briefs you wrote from it are kept.`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: onConfirm },
+    ]
+  );
+}
 
 function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -104,15 +117,21 @@ type CardProps = {
   blockHeight: number;
   onPress: () => void;
   onRetry: () => void;
+  /** Long-press. */
+  onDelete: () => void;
 };
 
-function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry }: CardProps) {
+function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry, onDelete }: CardProps) {
   const duration = formatDuration(clip.duration_seconds);
 
   if (clip.status === 'processing') {
     const progress = analysisProgress(clip, now);
     return (
-      <View style={[styles.card, styles.cardPlain]} accessibilityLabel={`Analysing ${clip.title ?? 'video'}`}>
+      <Pressable
+        style={[styles.card, styles.cardPlain]}
+        onLongPress={onDelete}
+        accessibilityLabel={`Analysing ${clip.title ?? 'video'}`}
+      >
         <View style={{ height: blockHeight }} />
         <View style={styles.cardFooter}>
           <Text style={styles.analysingText}>Analysing…</Text>
@@ -120,14 +139,18 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
             <View style={[styles.progressFill, { width: `${Math.max(6, progress * 100)}%` }]} />
           </View>
         </View>
-      </View>
+      </Pressable>
     );
   }
 
   if (!analysis) {
     // Failed, or marked ready with no analysis row.
     return (
-      <Pressable style={[styles.card, styles.cardPlain, { padding: 12, gap: 8 }]} onPress={onPress}>
+      <Pressable
+        style={[styles.card, styles.cardPlain, { padding: 12, gap: 8 }]}
+        onPress={onPress}
+        onLongPress={onDelete}
+      >
         <Text style={styles.plainEyebrow}>
           {clip.status === 'failed' ? "COULDN'T ANALYSE" : 'NOT ANALYSED'}
         </Text>
@@ -151,6 +174,8 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
     <Pressable
       style={[styles.card, { backgroundColor: stage?.color ?? colors.sky }]}
       onPress={onPress}
+      onLongPress={onDelete}
+      accessibilityHint="Long-press to delete"
       accessibilityRole="button"
     >
       <View style={[styles.block, { height: blockHeight }]}>
@@ -251,7 +276,7 @@ function Header({
         onPress={onOpenBrandProfile}
         style={styles.avatar}
         accessibilityRole="button"
-        accessibilityLabel="Brand profile"
+        accessibilityLabel="Settings"
         hitSlop={6}
       >
         {!!brandInitial && <Text style={styles.avatarText}>{brandInitial}</Text>}
@@ -275,6 +300,7 @@ export default function LibraryScreen({
   onAddVideos,
   onLoadSamples,
   onRetry,
+  onDelete,
 }: {
   clips: Clip[];
   analyses: TypedAnalysis[];
@@ -291,6 +317,7 @@ export default function LibraryScreen({
   onAddVideos: () => void;
   onLoadSamples: () => void;
   onRetry: (clipId: string) => void;
+  onDelete: (clipId: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [stageFilter, setStageFilter] = useState<StageFilter>('all');
@@ -456,6 +483,7 @@ export default function LibraryScreen({
                     blockHeight={blockHeight}
                     onPress={() => onSelectVideo(clip)}
                     onRetry={() => onRetry(clip.id)}
+                    onDelete={() => confirmDeleteClip(clip, () => onDelete(clip.id))}
                   />
                 ))}
               </View>

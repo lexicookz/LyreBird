@@ -23,6 +23,20 @@ export function shotsOf(brief: Brief): string[] {
     : [];
 }
 
+/** A brief as plain text, for sharing to notes, email or a teammate. */
+export function briefAsText(brief: Brief) {
+  const shots = shotsOf(brief).filter((s) => s.trim());
+  return [
+    `HOOK\n${brief.hook ?? ''}`,
+    shots.length ? `SHOT LIST\n${shots.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : null,
+    brief.script ? `SCRIPT\n${brief.script}` : null,
+    brief.caption ? `CAPTION\n${brief.caption}` : null,
+    brief.cta ? `CTA\n${brief.cta}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 export function briefFromAnalysis(clip: Clip, analysis: TypedAnalysis, brandId: string): Brief {
   const now = new Date().toISOString();
   return {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import LibraryScreen from './screens/LibraryScreen';
+import { View, StyleSheet, Share } from 'react-native';
+import LibraryScreen, { confirmDeleteClip } from './screens/LibraryScreen';
 import BriefsScreen from './screens/BriefsScreen';
 import VideoDetailScreen from './screens/VideoDetailScreen';
 import BriefScreen from './screens/BriefScreen';
@@ -8,18 +8,22 @@ import BrandProfileScreen from './screens/BrandProfileScreen';
 import CalendarScreen from './screens/CalendarScreen';
 import OpenerScreen from './screens/OpenerScreen';
 import BrandSetupScreen from './screens/BrandSetupScreen';
+import AuthScreen from './screens/AuthScreen';
+import SettingsScreen from './screens/SettingsScreen';
+import SearchScreen from './screens/SearchScreen';
 import {
   BrandSetup,
-  applyBrandSetup,
   completeOnboarding,
   loadOnboarding,
-  resetOnboarding,
+  saveBrandSetup,
 } from './data/brandSetup';
+import { Account, loadAccount, signIn, signOut } from './data/account';
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
+import AddVideoMenu from './components/AddVideoMenu';
 import { useLibrary } from './data/library';
 import { suggestDate, useCalendar } from './data/calendar';
-import { briefFromAnalysis, useBriefs } from './data/briefs';
+import { briefAsText, briefFromAnalysis, useBriefs } from './data/briefs';
 import ScheduleSheet from './components/ScheduleSheet';
 import { mockAnalyses, mockBrandProfile, mockClips } from './data/mockVideos';
 import { Brief, Clip, FunnelStage } from './types';
@@ -29,21 +33,25 @@ import { colors } from './theme';
 import { fontAssets } from './theme/fontAssets';
 
 // A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
-// They hold ids, not objects, so they always show the latest data. A brief opened
-// from a video's analysis remembers it in `backTo`, so Back returns there.
+// They hold ids, not objects, so they always show the latest data. `backTo`
+// is where Back goes (e.g. a brief opened from a video's analysis).
 type PushedScreen =
   | { type: 'detail'; clipId: string }
   | { type: 'brief'; briefId: string; backTo?: PushedScreen }
-  | { type: 'brandProfile' };
+  | { type: 'settings' }
+  | { type: 'brandProfile'; backTo?: PushedScreen };
 
-// First run: opener -> brand setup -> the app. Remembered on the device.
-type OnboardingStage = 'loading' | 'opener' | 'brand' | 'done';
+// Signed out: opener -> sign up (or log in) -> brand setup -> the app.
+type Stage = 'loading' | 'opener' | 'signup' | 'login' | 'brand' | 'done';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabKey>('library');
   const [pushed, setPushed] = useState<PushedScreen | null>(null);
-  const [onboarding, setOnboarding] = useState<OnboardingStage>('loading');
+  const [stage, setStage] = useState<Stage>('loading');
+  const [onboarded, setOnboarded] = useState(false);
+  const [account, setAccount] = useState<Account | null>(null);
   const [brandSetup, setBrandSetup] = useState<BrandSetup | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const tabBarSpace = useTabBarSpace();
   const library = useLibrary();
   const videoImport = useVideoImport();
@@ -53,9 +61,11 @@ function AppContent() {
   const [schedulingBriefId, setSchedulingBriefId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadOnboarding().then(({ onboarded, brand }) => {
+    Promise.all([loadOnboarding(), loadAccount()]).then(([{ onboarded, brand }, acct]) => {
       setBrandSetup(brand);
-      setOnboarding(onboarded ? 'done' : 'opener');
+      setOnboarded(onboarded);
+      setAccount(acct);
+      setStage(!acct ? 'opener' : onboarded ? 'done' : 'brand');
     });
   }, []);
 
@@ -83,11 +93,33 @@ function AppContent() {
 
   // ---------- actions ----------
 
+  async function handleAuth(email: string) {
+    const acct = await signIn(email);
+    setAccount(acct);
+    setStage(onboarded ? 'done' : 'brand');
+  }
+
   function handleFinishOnboarding(setup: BrandSetup | null) {
     if (setup) setBrandSetup(setup);
-    setOnboarding('done');
+    setOnboarded(true);
+    setStage('done');
     // Not awaited: if the write fails the user just sees onboarding again next launch.
-    completeOnboarding(setup).catch(() => { });
+    completeOnboarding(setup).catch(() => {});
+  }
+
+  function handleSaveBrand(setup: BrandSetup) {
+    setBrandSetup(setup);
+    saveBrandSetup(setup).catch(() => {});
+    closePushed();
+  }
+
+  /** Signs out of the (stand-in) account. Brand, videos and briefs stay on the phone. */
+  function handleSignOut() {
+    setPushed(null);
+    setActiveTab('library');
+    setAccount(null);
+    setStage('login');
+    signOut().catch(() => {});
   }
 
   function handleImport() {
@@ -100,14 +132,12 @@ function AppContent() {
     library.loadSamples();
     briefs.loadSamples();
   }
-  function handleSignOut() {
-    setPushed(null);
-    setActiveTab('library');
-    setBrandSetup(null);
-    setOnboarding('opener');
-    // Not awaited: if the clear fails, the user just sees their data again next launch.
-    resetOnboarding().catch(() => { });
+
+  function handleExportBriefs() {
+    const text = briefs.briefs.map(briefAsText).join('\n\n— — —\n\n');
+    Share.share({ message: text || 'No briefs yet.' });
   }
+
   /** "Adapt for my brand": open the clip's brief, creating a draft if there isn't one. */
   function handleAdapt(clip: Clip) {
     const existing = briefs.briefs.find((b) => b.clip_id === clip.id);
@@ -123,27 +153,42 @@ function AppContent() {
     setPushed({ type: 'brief', briefId: brief.id, backTo });
   }
 
-  const openBrandProfile = () => setPushed({ type: 'brandProfile' });
-  const closePushed = () => setPushed(pushed?.type === 'brief' ? (pushed.backTo ?? null) : null);
+  const openSettings = () => setPushed({ type: 'settings' });
+  function closePushed() {
+    setPushed(
+      pushed && (pushed.type === 'brief' || pushed.type === 'brandProfile')
+        ? (pushed.backTo ?? null)
+        : null
+    );
+  }
 
-  if (onboarding === 'loading' || !library.loaded || !calendar.loaded || !briefs.loaded) {
+  if (stage === 'loading' || !library.loaded || !calendar.loaded || !briefs.loaded) {
     return null;
   }
 
-  if (onboarding === 'opener') {
+  // ---------- signed out / first run ----------
+
+  if (stage === 'opener') {
+    return <OpenerScreen onStart={() => setStage('signup')} onSkip={() => setStage('login')} />;
+  }
+
+  if (stage === 'signup' || stage === 'login') {
     return (
-      <OpenerScreen
-        onStart={() => setOnboarding('brand')}
-        onSkip={() => handleFinishOnboarding(null)}
+      <AuthScreen
+        key={stage}
+        mode={stage}
+        savedCount={library.clips.length}
+        onSubmit={handleAuth}
+        onSwitchMode={() => setStage(stage === 'login' ? 'signup' : 'login')}
       />
     );
   }
 
-  if (onboarding === 'brand') {
+  if (stage === 'brand') {
     return (
       <BrandSetupScreen
         initial={brandSetup}
-        onBack={() => setOnboarding('opener')}
+        onBack={() => setStage('opener')}
         onDone={handleFinishOnboarding}
       />
     );
@@ -151,6 +196,7 @@ function AppContent() {
 
   // Rendered over whichever screen opened it (a tab or a brief).
   const schedulingBrief = briefs.briefs.find((b) => b.id === schedulingBriefId);
+  const openedFromBrief = pushed?.type === 'brief' && pushed.briefId === schedulingBriefId;
   const scheduleSheet = (
     <ScheduleSheet
       visible={!!schedulingBrief}
@@ -167,24 +213,45 @@ function AppContent() {
         setSchedulingBriefId(null);
       }}
       onClose={() => setSchedulingBriefId(null)}
+      onSeeBrief={
+        schedulingBriefId && !openedFromBrief
+          ? () => {
+              setPushed({ type: 'brief', briefId: schedulingBriefId });
+              setSchedulingBriefId(null);
+            }
+          : undefined
+      }
     />
   );
 
   // ---------- pushed screens: full-screen, no tab bar ----------
 
-  if (pushed?.type === 'brandProfile') {
+  if (pushed?.type === 'settings') {
+    const complete = !!(
+      brandSetup?.name &&
+      brandSetup.product_summary &&
+      brandSetup.target_audience &&
+      brandSetup.tones.length
+    );
     return (
-      <BrandProfileScreen
-        existingProfile={
-          brandSetup ? applyBrandSetup(mockBrandProfile, brandSetup) : mockBrandProfile
-        }
-        onBack={closePushed}
+      <SettingsScreen
+        brandName={brandSetup?.name}
+        email={account?.email}
+        brandComplete={complete}
+        onOpenBrand={() => setPushed({ type: 'brandProfile', backTo: { type: 'settings' } })}
+        onExportBriefs={handleExportBriefs}
         onSignOut={handleSignOut}
+        onBack={closePushed}
       />
     );
   }
 
-  const openBrief = pushed?.type === 'brief' ? briefs.briefs.find((b) => b.id === pushed.briefId) : undefined;
+  if (pushed?.type === 'brandProfile') {
+    return <BrandProfileScreen setup={brandSetup} onSave={handleSaveBrand} onBack={closePushed} />;
+  }
+
+  const openBrief =
+    pushed?.type === 'brief' ? briefs.briefs.find((b) => b.id === pushed.briefId) : undefined;
   if (openBrief) {
     return (
       <>
@@ -212,6 +279,12 @@ function AppContent() {
         hasBrief={briefClipIds.has(detailClip.id)}
         onBack={closePushed}
         onAdapt={() => handleAdapt(detailClip)}
+        onDelete={() =>
+          confirmDeleteClip(detailClip, () => {
+            library.removeClip(detailClip.id);
+            setPushed(null);
+          })
+        }
       />
     );
   }
@@ -221,8 +294,6 @@ function AppContent() {
   function renderTabContent() {
     switch (activeTab) {
       case 'library':
-      case 'search':
-        // Search reuses the Library (with its search box) until the Search tab is designed.
         return (
           <LibraryScreen
             clips={library.clips}
@@ -233,10 +304,22 @@ function AppContent() {
             brandName={brandSetup?.name}
             focus={brandSetup?.focus}
             onSelectVideo={(clip) => setPushed({ type: 'detail', clipId: clip.id })}
-            onOpenBrandProfile={openBrandProfile}
+            onOpenBrandProfile={openSettings}
             onAddVideos={videoImport.start}
             onLoadSamples={handleLoadSamples}
             onRetry={library.retryAnalysis}
+            onDelete={library.removeClip}
+          />
+        );
+      case 'search':
+        return (
+          <SearchScreen
+            clips={library.clips}
+            analyses={library.analyses}
+            briefs={briefs.briefs}
+            stageOf={stageOf}
+            onSelectClip={(clip) => setPushed({ type: 'detail', clipId: clip.id })}
+            onSelectBrief={(brief) => setPushed({ type: 'brief', briefId: brief.id })}
           />
         );
       case 'briefs':
@@ -248,7 +331,7 @@ function AppContent() {
             brandName={brandSetup?.name}
             onSelectBrief={(brief) => setPushed({ type: 'brief', briefId: brief.id })}
             onSchedule={setSchedulingBriefId}
-            onOpenBrandProfile={openBrandProfile}
+            onOpenBrandProfile={openSettings}
           />
         );
       case 'calendar':
@@ -258,26 +341,38 @@ function AppContent() {
             briefs={briefs.briefs}
             clipFor={clipFor}
             brandName={brandSetup?.name}
-            onOpenBrandProfile={openBrandProfile}
+            onOpenBrandProfile={openSettings}
             onEditEntry={setSchedulingBriefId}
           />
         );
     }
   }
 
-  const isLibraryTab = activeTab === 'library' || activeTab === 'search';
-
   return (
     <View style={styles.container}>
       {/* The bar floats over the bottom of the screen. The Library scrolls under it
           and pads itself; other tabs are kept clear of it here. */}
-      <View style={[styles.content, !isLibraryTab && { paddingBottom: tabBarSpace }]}>
+      <View style={[styles.content, activeTab !== 'library' && { paddingBottom: tabBarSpace }]}>
         {renderTabContent()}
       </View>
+      {addMenuOpen && (
+        <AddVideoMenu
+          bottom={tabBarSpace - 8}
+          onCameraRoll={() => {
+            setAddMenuOpen(false);
+            videoImport.start();
+          }}
+          onClose={() => setAddMenuOpen(false)}
+        />
+      )}
       <BottomTabBar
         activeTab={activeTab}
-        onChangeTab={setActiveTab}
-        onPressAdd={videoImport.start}
+        onChangeTab={(tab) => {
+          setAddMenuOpen(false);
+          setActiveTab(tab);
+        }}
+        onPressAdd={() => setAddMenuOpen(!addMenuOpen)}
+        addOpen={addMenuOpen}
       />
       {videoImport.pending.length > 0 && (
         <ImportBar

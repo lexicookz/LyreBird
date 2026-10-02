@@ -16,13 +16,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton, Chip, Eyebrow, PrimaryButton, StepProgress } from '../components/ui';
-import { BrandSetup, emptyBrandSetup } from '../data/brandSetup';
+import { BrandSetup, TONES, emptyBrandSetup } from '../data/brandSetup';
 import { colors, fonts, funnelStages, FUNNEL_ORDER, pagePadding, radius } from '../theme';
 import type { FunnelStage } from '../types';
 
 const TOTAL_STEPS = 4;
 
-const TONES = ['Plain-spoken', 'Warm', 'Dry humour', 'Expert', 'No hype', 'Playful', 'Clinical', 'Blunt'];
 
 // Example hooks for the "So a hook becomes" preview. Writing a real one needs
 // Gemini, which only the worker can call, so these are fixed examples keyed on

@@ -86,10 +86,13 @@ export default function BottomTabBar({
   activeTab,
   onChangeTab,
   onPressAdd,
+  addOpen = false,
 }: {
   activeTab: TabKey;
   onChangeTab: (tab: TabKey) => void;
   onPressAdd: () => void;
+  /** The "Add a video" menu is open: the "+" turns into a close "×". */
+  addOpen?: boolean;
 }) {
   const insets = useSafeAreaInsets();
 
@@ -125,10 +128,12 @@ export default function BottomTabBar({
             style={styles.fab}
             onPress={onPressAdd}
             accessibilityRole="button"
-            accessibilityLabel="Add videos"
+            accessibilityLabel={addOpen ? 'Close add a video' : 'Add videos'}
           >
-            <View style={styles.plusH} />
-            <View style={styles.plusV} />
+            <View style={[styles.plusWrap, addOpen && styles.plusRotated]}>
+              <View style={styles.plusH} />
+              <View style={styles.plusV} />
+            </View>
           </Pressable>
         </View>
         {renderTab(TABS[2])}
@@ -187,6 +192,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 5,
     elevation: 12,
+  },
+  plusWrap: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plusRotated: {
+    transform: [{ rotate: '45deg' }],
   },
   plusH: {
     position: 'absolute',

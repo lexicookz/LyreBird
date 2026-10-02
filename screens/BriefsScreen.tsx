@@ -60,7 +60,7 @@ export default function BriefsScreen({
             onPress={onOpenBrandProfile}
             style={styles.avatar}
             accessibilityRole="button"
-            accessibilityLabel="Brand profile"
+            accessibilityLabel="Settings"
           >
             {!!brandInitial && <Text style={styles.avatarText}>{brandInitial}</Text>}
           </Pressable>

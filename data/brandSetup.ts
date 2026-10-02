@@ -20,6 +20,9 @@ export type BrandSetup = {
   focusShare: number;
 };
 
+/** Voice options offered in setup and on the Branding screen. */
+export const TONES = ['Plain-spoken', 'Warm', 'Dry humour', 'Expert', 'No hype', 'Playful', 'Clinical', 'Blunt'];
+
 export const emptyBrandSetup: BrandSetup = {
   name: '',
   product_summary: '',
@@ -68,6 +71,11 @@ export function applyBrandSetup(base: Brand, setup: BrandSetup): Brand {
     target_audience: setup.target_audience || null,
     tone_of_voice: setup.tones.length ? setup.tones.join(', ') : null,
   };
+}
+
+/** Saves edits made on the Branding screen after onboarding. */
+export async function saveBrandSetup(brand: BrandSetup) {
+  await AsyncStorage.setItem(BRAND_KEY, JSON.stringify(brand));
 }
 
 /** Clears onboarding + brand data, as if this were a fresh install (our "sign out"). */

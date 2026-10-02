@@ -36,6 +36,7 @@ export default function ScheduleSheet({
   onSave,
   onRemove,
   onClose,
+  onSeeBrief,
 }: {
   visible: boolean;
   hook: string;
@@ -46,6 +47,8 @@ export default function ScheduleSheet({
   onSave: (values: Omit<CalendarItem, 'briefId'>) => void;
   onRemove: () => void;
   onClose: () => void;
+  /** Opens the brief itself. Left out when the sheet was opened from the brief. */
+  onSeeBrief?: () => void;
 }) {
   const [date, setDate] = useState(suggestedDate);
   const [stage, setStage] = useState<FunnelStage>(defaultStage);
@@ -184,6 +187,15 @@ export default function ScheduleSheet({
         </View>
 
         <PrimaryButton label="Save schedule" onPress={() => onSave({ date, stage, status })} />
+        {onSeeBrief && (
+          <Pressable
+            onPress={onSeeBrief}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.seeBrief, pressed && { opacity: 0.8 }]}
+          >
+            <Text style={styles.seeBriefText}>See brief</Text>
+          </Pressable>
+        )}
         <Pressable onPress={existing ? onRemove : onClose} hitSlop={8} accessibilityRole="button" style={styles.secondary}>
           <Text style={styles.secondaryText}>
             {existing ? 'Remove from calendar' : 'Keep unscheduled instead'}
@@ -363,6 +375,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
     color: colors.cream,
+  },
+  seeBrief: {
+    height: 50,
+    marginTop: 10,
+    borderRadius: radius.field,
+    borderWidth: 1.2,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seeBriefText: {
+    fontFamily: fonts.heading,
+    fontSize: 14.5,
+    color: colors.ink,
   },
   secondary: {
     alignSelf: 'center',

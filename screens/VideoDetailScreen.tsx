@@ -36,6 +36,7 @@ export default function VideoDetailScreen({
   hasBrief,
   onBack,
   onAdapt,
+  onDelete,
 }: {
   video: Clip;
   analysis?: TypedAnalysis;
@@ -43,6 +44,8 @@ export default function VideoDetailScreen({
   hasBrief: boolean;
   onBack: () => void;
   onAdapt: () => void;
+  /** Asks for confirmation itself, then deletes. */
+  onDelete: () => void;
 }) {
   const [showAllBeats, setShowAllBeats] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -153,6 +156,10 @@ export default function VideoDetailScreen({
             )}
           </>
         )}
+
+        <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" style={styles.delete}>
+          <Text style={styles.deleteText}>Delete video</Text>
+        </Pressable>
       </ScrollView>
 
       {payload && (
@@ -334,6 +341,15 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     lineHeight: 20,
     color: colors.textMuted,
+  },
+  delete: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+  },
+  deleteText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: '#8a4b3c',
   },
   footer: {
     paddingHorizontal: pagePadding,
