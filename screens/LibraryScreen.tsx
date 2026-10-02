@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Pressable,
   TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { mockVideos, mockAnalyses } from '../data/mockVideos';
@@ -21,12 +22,31 @@ const FUNNEL_FILTERS: { key: 'all' | 'TOFU' | 'MOFU' | 'BOFU'; label: string }[]
   { key: 'BOFU', label: 'Convert' },
 ];
 
-function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (video: Video) => void }) {
+function VideoCard({
+  video,
+  onSelectVideo,
+  onDelete,
+}: {
+  video: Video;
+  onSelectVideo: (video: Video) => void;
+  onDelete: (video: Video) => void;
+}) {
   return (
     <Pressable style={styles.card} onPress={() => onSelectVideo(video)}>
       <Image source={{ uri: video.thumbnail_url ?? undefined }} style={styles.thumbnail} />
       <View style={styles.cardBody}>
-        <Text style={styles.title} numberOfLines={2}>{video.title}</Text>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.title} numberOfLines={2}>{video.title}</Text>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              onDelete(video);
+            }}
+            hitSlop={8}
+          >
+            <Text style={styles.deleteIcon}>🗑</Text>
+          </Pressable>
+        </View>
         <Text style={styles.status}>{video.status}</Text>
         <View style={styles.tagRow}>
           {video.tags.map((tag) => (
@@ -53,8 +73,23 @@ export default function LibraryScreen({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'TOFU' | 'MOFU' | 'BOFU'>('all');
+  const [videos, setVideos] = useState(mockVideos);
 
-  const filteredVideos = mockVideos.filter((video) => {
+  function handleDeleteVideo(video: Video) {
+    Alert.alert(
+      'Delete video?',
+      `"${video.title}" will be removed from your library.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => setVideos((prev) => prev.filter((v) => v.id !== video.id)),
+        },
+      ]
+    );
+  }
+  const filteredVideos = videos.filter((video) => {
     const query = searchQuery.trim().toLowerCase();
     const matchesQuery =
       query === '' ||
@@ -119,7 +154,9 @@ export default function LibraryScreen({
         <FlatList
           data={filteredVideos}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <VideoCard video={item} onSelectVideo={onSelectVideo} />}
+          renderItem={({ item }) => (
+            <VideoCard video={item} onSelectVideo={onSelectVideo} onDelete={handleDeleteVideo} />
+          )}
           contentContainerStyle={styles.listContent}
         />
       )}
@@ -152,6 +189,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#007AFF',
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  deleteIcon: {
+    fontSize: 16,
+    marginLeft: 8,
   },
   searchRow: {
     paddingHorizontal: 16,
@@ -220,6 +266,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 4,
+    flex: 1,
   },
   status: {
     fontSize: 12,
@@ -243,3 +290,4 @@ const styles = StyleSheet.create({
     color: '#333',
   },
 });
+
