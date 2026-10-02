@@ -6,13 +6,13 @@ import {
   Image,
   FlatList,
   StyleSheet,
-  SafeAreaView,
   Pressable,
   TextInput,
   ActivityIndicator,
   RefreshControl,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchLibrary, uploadClipFromCameraRoll, UploadCancelled } from '../lib/clips';
 import { useUserId } from '../lib/session';
 import { Video, Analysis } from '../types';
@@ -47,10 +47,12 @@ function VideoCard({ video, onSelectVideo }: { video: Video; onSelectVideo: (vid
 export default function LibraryScreen({
   onSelectVideo,
   onOpenBrandProfile,
+  onOpenImport,
   onOpenCalendar,
 }: {
   onSelectVideo: (video: Video) => void;
   onOpenBrandProfile: () => void;
+  onOpenImport: () => void;
   onOpenCalendar: () => void;
 }) {
   const userId = useUserId();
@@ -98,12 +100,10 @@ export default function LibraryScreen({
     setUploading(true);
     try {
       await uploadClipFromCameraRoll(userId);
-      // Re-read rather than pushing the returned row onto the list: the
-      // refresh is the thing worth knowing works, and it keeps ordering and
-      // any server-set defaults honest.
+      // Re-read rather than pushing the returned row on: the refresh is the
+      // thing worth knowing works, and it keeps ordering honest.
       await load();
     } catch (e) {
-      // Backing out of the picker is not an error worth an alert.
       if (!(e instanceof UploadCancelled)) {
         Alert.alert('Upload failed', e instanceof Error ? e.message : 'Something went wrong.');
       }
@@ -127,49 +127,11 @@ export default function LibraryScreen({
     return (analysis?.payload as { funnelStage?: string } | undefined)?.funnelStage === activeFilter;
   });
 
-  function renderBody() {
-    if (loading) {
-      return (
-        <View style={styles.centeredBody}>
-          <ActivityIndicator />
-        </View>
-      );
-    }
-
-    if (error) {
-      return (
-        <View style={styles.centeredBody}>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={handleRefresh}>
-            <Text style={styles.retryLink}>Try again</Text>
-          </Pressable>
-        </View>
-      );
-    }
-
-    if (filteredVideos.length === 0) {
-      // Distinguish "nothing uploaded yet" from "nothing matched", so a new
-      // account is not told its search failed.
-      const message =
-        videos.length === 0
-          ? 'No clips yet. Upload one from your camera roll to get started.'
-          : 'No videos match your search.';
-      return <Text style={styles.emptyText}>{message}</Text>;
-    }
-
-    return (
-      <FlatList
-        data={filteredVideos}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <VideoCard video={item} onSelectVideo={onSelectVideo} />}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-      />
-    );
-  }
-
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={['top', 'left', 'right']}
+    >
       <View style={styles.headerRow}>
         <Text style={styles.header}>Library</Text>
         <View style={styles.headerLinks}>
@@ -177,6 +139,9 @@ export default function LibraryScreen({
             <Text style={[styles.headerLink, (uploading || !userId) && styles.headerLinkDisabled]}>
               {uploading ? 'Uploading…' : 'Upload'}
             </Text>
+          </Pressable>
+          <Pressable onPress={onOpenImport}>
+            <Text style={styles.headerLink}>Import</Text>
           </Pressable>
           <Pressable onPress={onOpenBrandProfile}>
             <Text style={styles.headerLink}>Brand Profile</Text>
@@ -211,7 +176,34 @@ export default function LibraryScreen({
         })}
       </View>
 
-      {renderBody()}
+      {loading ? (
+        <View style={styles.centeredBody}>
+          <ActivityIndicator />
+        </View>
+      ) : error ? (
+        <View style={styles.centeredBody}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable onPress={handleRefresh}>
+            <Text style={styles.retryLink}>Try again</Text>
+          </Pressable>
+        </View>
+      ) : filteredVideos.length === 0 ? (
+        // Distinguish "nothing uploaded yet" from "nothing matched", so a new
+        // account is not told its search failed.
+        <Text style={styles.emptyText}>
+          {videos.length === 0
+            ? 'No clips yet. Upload one from your camera roll to get started.'
+            : 'No videos match your search.'}
+        </Text>
+      ) : (
+        <FlatList
+          data={filteredVideos}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <VideoCard video={item} onSelectVideo={onSelectVideo} />}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -237,13 +229,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
   },
-  headerLink: {
+  headerLinkDisabled: {
+    color: '#aaa',
+  },
+  centeredBody: {
+    marginTop: 40,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#c0392b',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  retryLink: {
+    marginTop: 10,
     fontSize: 14,
     fontWeight: '600',
     color: '#007AFF',
   },
-  headerLinkDisabled: {
-    color: '#aaa',
+  headerLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
   },
   searchRow: {
     paddingHorizontal: 16,
@@ -282,28 +290,11 @@ const styles = StyleSheet.create({
   filterChipTextActive: {
     color: '#fff',
   },
-  centeredBody: {
-    marginTop: 40,
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#c0392b',
-    textAlign: 'center',
-    paddingHorizontal: 24,
-  },
-  retryLink: {
-    marginTop: 10,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
   emptyText: {
     fontSize: 14,
     color: '#888',
     textAlign: 'center',
     marginTop: 40,
-    paddingHorizontal: 24,
   },
   listContent: {
     paddingHorizontal: 16,

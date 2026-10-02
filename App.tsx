@@ -6,23 +6,22 @@ import VideoDetailScreen from './screens/VideoDetailScreen';
 import BriefScreen from './screens/BriefScreen';
 import BrandProfileScreen from './screens/BrandProfileScreen';
 import CalendarScreen from './screens/CalendarScreen';
+import ImportScreen from './screens/ImportScreen';
 import SignInScreen from './screens/SignInScreen';
 import BottomTabBar, { TabKey } from './components/BottomTabBar';
-import { SessionProvider, useSession } from './lib/session';
 import { mockBriefs, mockBrandProfile } from './data/mockVideos';
 import { Video, Brief, Clip } from './types';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SessionProvider, useSession } from './lib/session';
 
 // A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
 type PushedScreen =
   | { type: 'detail'; video: Video }
   | { type: 'brief'; video: Video; brief?: Brief }
-  | { type: 'brandProfile' };
+  | { type: 'brandProfile' }
+  | { type: 'import' };
 
-/**
- * Everything below the session gate. Split out so the gate can decide between
- * this and the sign-in screen without either knowing about the other.
- */
-function SignedInApp() {
+function AppContent() {
   const [activeTab, setActiveTab] = useState<TabKey>('library');
   const [pushed, setPushed] = useState<PushedScreen | null>(null);
 
@@ -43,11 +42,19 @@ function SignedInApp() {
     setPushed({ type: 'brandProfile' });
   }
 
+  function handleOpenImport() {
+    setPushed({ type: 'import' });
+  }
+
   function handleClosePushed() {
     setPushed(null);
   }
 
   // Pushed screens take over the full screen, no tab bar underneath.
+  if (pushed?.type === 'import') {
+    return <ImportScreen onBack={handleClosePushed} />;
+  }
+
   if (pushed?.type === 'brandProfile') {
     return (
       <BrandProfileScreen
@@ -85,6 +92,7 @@ function SignedInApp() {
           <LibraryScreen
             onSelectVideo={handleSelectVideo}
             onOpenBrandProfile={handleOpenBrandProfile}
+            onOpenImport={handleOpenImport}
             onOpenCalendar={() => setActiveTab('calendar')}
           />
         );
@@ -94,6 +102,7 @@ function SignedInApp() {
           <LibraryScreen
             onSelectVideo={handleSelectVideo}
             onOpenBrandProfile={handleOpenBrandProfile}
+            onOpenImport={handleOpenImport}
             onOpenCalendar={() => setActiveTab('calendar')}
           />
         );
@@ -112,35 +121,6 @@ function SignedInApp() {
   );
 }
 
-/**
- * Chooses between the app and the sign-in screen.
- *
- * This gate is not decoration. Every RLS policy is `to authenticated`, so a
- * signed-out app cannot read its own rows or write a file to a path it owns —
- * it would render empty and fail on upload with no obvious cause.
- */
-function Root() {
-  const { session, loading } = useSession();
-
-  if (loading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
-
-  return session ? <SignedInApp /> : <SignInScreen />;
-}
-
-export default function App() {
-  return (
-    <SessionProvider>
-      <Root />
-    </SessionProvider>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -155,3 +135,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
 });
+
+/**
+ * Chooses between the app and the sign-in screen.
+ *
+ * Not decoration: every RLS policy is `to authenticated`, so a signed-out app
+ * cannot read its own rows or write a file to a path it owns. It would render
+ * an empty library and fail on upload with no visible cause.
+ */
+function Root() {
+  const { session, loading } = useSession();
+
+  if (loading) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  return session ? <AppContent /> : <SignInScreen />;
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <SessionProvider>
+        <Root />
+      </SessionProvider>
+    </SafeAreaProvider>
+  );
+}

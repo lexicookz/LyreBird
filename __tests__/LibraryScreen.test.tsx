@@ -47,6 +47,7 @@ async function renderScreen() {
         <LibraryScreen
             onSelectVideo={() => { }}
             onOpenBrandProfile={() => { }}
+            onOpenImport={() => { }}
             onOpenCalendar={() => { }}
         />
     );
