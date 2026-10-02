@@ -13,6 +13,7 @@ import {
   applyBrandSetup,
   completeOnboarding,
   loadOnboarding,
+  resetOnboarding,
 } from './data/brandSetup';
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
@@ -86,7 +87,7 @@ function AppContent() {
     if (setup) setBrandSetup(setup);
     setOnboarding('done');
     // Not awaited: if the write fails the user just sees onboarding again next launch.
-    completeOnboarding(setup).catch(() => {});
+    completeOnboarding(setup).catch(() => { });
   }
 
   function handleImport() {
@@ -99,7 +100,14 @@ function AppContent() {
     library.loadSamples();
     briefs.loadSamples();
   }
-
+  function handleSignOut() {
+    setPushed(null);
+    setActiveTab('library');
+    setBrandSetup(null);
+    setOnboarding('opener');
+    // Not awaited: if the clear fails, the user just sees their data again next launch.
+    resetOnboarding().catch(() => { });
+  }
   /** "Adapt for my brand": open the clip's brief, creating a draft if there isn't one. */
   function handleAdapt(clip: Clip) {
     const existing = briefs.briefs.find((b) => b.clip_id === clip.id);
@@ -171,6 +179,7 @@ function AppContent() {
           brandSetup ? applyBrandSetup(mockBrandProfile, brandSetup) : mockBrandProfile
         }
         onBack={closePushed}
+        onSignOut={handleSignOut}
       />
     );
   }

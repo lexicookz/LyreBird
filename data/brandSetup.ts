@@ -69,3 +69,8 @@ export function applyBrandSetup(base: Brand, setup: BrandSetup): Brand {
     tone_of_voice: setup.tones.length ? setup.tones.join(', ') : null,
   };
 }
+
+/** Clears onboarding + brand data, as if this were a fresh install (our "sign out"). */
+export async function resetOnboarding() {
+  await AsyncStorage.multiRemove([ONBOARDED_KEY, BRAND_KEY]);
+}
