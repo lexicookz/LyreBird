@@ -7,6 +7,7 @@ import {
   ScrollView,
   Pressable,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandProfile } from '../types';
@@ -40,9 +41,11 @@ function Field({
 export default function BrandProfileScreen({
   existingProfile,
   onBack,
+  onSignOut,
 }: {
   existingProfile?: BrandProfile;
   onBack: () => void;
+  onSignOut: () => void;
 }) {
   const [name, setName] = useState(existingProfile?.name ?? '');
   const [product, setProduct] = useState(existingProfile?.product_summary ?? '');
@@ -62,12 +65,24 @@ export default function BrandProfileScreen({
     setTimeout(() => setSaved(false), 1500);
   }
 
+  function handleSignOutPress() {
+    Alert.alert(
+      'Sign out?',
+      'This clears your brand setup and takes you back to the start.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: onSignOut },
+      ]
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerRow}>
         <Pressable onPress={onBack} hitSlop={10}>
           <Text style={styles.backButton}>← Back</Text>
         </Pressable>
+
         <Text style={styles.headerTitle}>Brand Profile</Text>
       </View>
 
@@ -83,6 +98,9 @@ export default function BrandProfileScreen({
 
         <Pressable style={styles.saveButton} onPress={handleSave}>
           <Text style={styles.saveButtonText}>{saved ? 'Saved ✓' : 'Save Profile'}</Text>
+        </Pressable>
+        <Pressable style={styles.signOutButton} onPress={handleSignOutPress}>
+          <Text style={styles.signOutButtonText}>Sign Out</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -156,5 +174,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  signOutButton: {
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  signOutButtonText: {
+    color: '#FF3B30',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
