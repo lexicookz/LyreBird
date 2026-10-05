@@ -16,22 +16,13 @@ from google.genai import types
 
 from app.analysis import AnalysisResult
 from app.config import settings
+from app.prompts import load, load_latest
 
-# Bumped whenever the prompt below changes. It is written to
-# analyses.prompt_version so two runs can be told apart later — the whole
-# reason analyses live in their own table rather than as a column on clips.
-PROMPT_VERSION = "analyse-v1"
+# The prompt itself lives in app/prompts/analyse.v<n>.txt, not here. Which
+# version ran is written to analyses.prompt_version, and published versions
+# are never edited -- see app/prompts.py for why that matters.
+PROMPT_NAME = "analyse"
 
-PROMPT = (
-    "Analyse this short-form video and fill in every field.\n\n"
-    "Transcribe speech verbatim. Report the on-screen text as it appears, in "
-    "order. Break the video into its structural beats — the moves it makes, "
-    "not a shot list of camera angles. Describe pacing in terms a creator "
-    "would use. Classify the funnel stage and format from the options given, "
-    "choosing the closest fit rather than leaving a field empty.\n\n"
-    "Describe only what is in the video. Do not infer the brand, the product "
-    "or the creator's intent from outside it."
-)
 
 # Low but not zero: the taxonomy fields should be near-deterministic, while
 # the prose fields still need to read like language.
@@ -134,19 +125,25 @@ def delete_file(name: str) -> None:
         pass
 
 
-def analyse(video_file) -> AnalysisResult:
+def analyse(video_file, prompt_version: str | None = None) -> tuple[AnalysisResult, str]:
     """Run the analysis prompt against an uploaded video.
 
     Raises GeminiError rather than returning a partial result: the caller's
     job is to write a row or write nothing, and a half-parsed payload is the
     junk the ticket is explicit about not storing.
+
+    Returns the result and the prompt version that produced it, so the caller
+    writes the version that actually ran rather than the one it assumed.
+    Passing an older version re-runs that exact prompt, which is how two
+    analyses of one clip become comparable.
     """
+    prompt, version = load(prompt_version) if prompt_version else load_latest(PROMPT_NAME)
     client = get_client()
 
     def _call():
         return client.models.generate_content(
             model=settings.gemini_model,
-            contents=[video_file, PROMPT],
+            contents=[video_file, prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=AnalysisResult,
@@ -185,4 +182,4 @@ def analyse(video_file) -> AnalysisResult:
         except Exception as exc:
             raise GeminiError(f"Response did not validate against AnalysisResult: {exc}") from exc
 
-    return parsed
+    return parsed, version

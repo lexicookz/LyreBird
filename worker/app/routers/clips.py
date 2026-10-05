@@ -6,12 +6,13 @@ import tempfile
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.config import settings
 from app.db import get_client
-from app.gemini import PROMPT_VERSION, GeminiError, GeminiTimeout, analyse, delete_file, upload_and_wait
+from app.gemini import GeminiError, GeminiTimeout, analyse, delete_file, upload_and_wait
+from app.prompts import PromptError, load as load_prompt, versions
 from app.media import MediaError, downscale_to_480p, extract_thumbnail, probe_duration_seconds
 from app.models import Clip
 
@@ -201,7 +202,17 @@ class AnalyseResult(BaseModel):
 
 
 @router.post("/{clip_id}/analyse", response_model=AnalyseResult)
-def analyse_clip(clip_id: UUID) -> AnalyseResult:
+def analyse_clip(
+    clip_id: UUID,
+    prompt_version: str | None = Query(
+        default=None,
+        description=(
+            "Run a specific prompt version, e.g. 'analyse-v1'. Defaults to the "
+            "latest. Re-running an older version is how two analyses of the "
+            "same clip become comparable."
+        ),
+    ),
+) -> AnalyseResult:
     """Send a clip to Gemini and store the breakdown.
 
     `def` rather than `async def` for the same reason as /prepare: the upload,
@@ -214,6 +225,16 @@ def analyse_clip(clip_id: UUID) -> AnalyseResult:
     overwriting the other.
     """
     client = get_client()
+
+    # Fail before doing any work if the caller named a version that does not
+    # exist -- uploading a video first and then discovering the typo wastes
+    # a minute and an upload.
+    if prompt_version is not None:
+        try:
+            load_prompt(prompt_version)
+        except PromptError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     clip = _fetch_clip(client, clip_id)
 
     # Same guard as /prepare. The worker bypasses RLS, so a path outside the
@@ -245,7 +266,7 @@ def analyse_clip(clip_id: UUID) -> AnalyseResult:
         try:
             uploaded = upload_and_wait(source)
             uploaded_name = uploaded.name
-            result = analyse(uploaded)
+            result, used_version = analyse(uploaded, prompt_version)
         except GeminiTimeout as exc:
             # Already retried once inside analyse(). 504 rather than 422: the
             # request is worth repeating later, which a malformed response is
@@ -272,7 +293,7 @@ def analyse_clip(clip_id: UUID) -> AnalyseResult:
                 "clip_id": str(clip.id),
                 "payload": payload,
                 "model_version": settings.gemini_model,
-                "prompt_version": PROMPT_VERSION,
+                "prompt_version": used_version,
             }
         )
         .execute()
@@ -292,6 +313,12 @@ def analyse_clip(clip_id: UUID) -> AnalyseResult:
         analysis_id=rows[0]["id"],
         clip_id=clip.id,
         model_version=settings.gemini_model,
-        prompt_version=PROMPT_VERSION,
+        prompt_version=used_version,
         payload=payload,
     )
+
+
+@router.get("/prompt-versions", response_model=list[str])
+def list_prompt_versions() -> list[str]:
+    """Every analysis prompt version available to re-run, oldest first."""
+    return versions("analyse")
