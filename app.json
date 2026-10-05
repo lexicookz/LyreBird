@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "VideoBreakdownTool",
-    "slug": "VideoBreakdownTool",
+    "name": "LyreBird",
+    "slug": "LyreBird",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

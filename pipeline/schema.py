@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class FunnelStage(str, Enum):
@@ -15,8 +15,6 @@ class FormatTag(str, Enum):
 
 
 class VideoAnalysis(BaseModel):
- 
-
   id: str
   title: str
   thumbnailUrl: str
@@ -25,11 +23,12 @@ class VideoAnalysis(BaseModel):
   createdAt: str
   hook: str
   transcript: str
-  onScreenText: str
-  shotBeats: list
+  onScreenText: list[str]
+  shotBeats: list[str]
   pacing: str
   cta: str
   format: str
   funnelStage: FunnelStage
   formatTag: FormatTag
-  
+  description: str = Field(max_length=100)
+
