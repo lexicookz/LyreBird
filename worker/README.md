@@ -54,6 +54,18 @@ you.
 
 `/clips` is mounted but has no routes yet.
 
+## Brief schema
+
+`app/brief_schema.py` defines what Adapt takes in (`BrandProfile`) and what
+Gemini must return (`BriefDraft`). After changing it, re-export the JSON
+Schema files the app and mock data are checked against:
+
+```bash
+python -m app.brief_schema
+```
+
+Then update `types/brief.ts` to match. `npm test` fails until you do.
+
 ```bash
 curl -i localhost:8000/health
 ```
