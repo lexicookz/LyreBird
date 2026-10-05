@@ -158,6 +158,43 @@ class BriefDraft(_Contract):
         return self
 
 
+# ---------- briefs row ----------
+
+
+def _seconds(value: float) -> str:
+    return f"{value:g}"
+
+
+def to_brief_columns(
+    draft: BriefDraft, *, prompt_version: str, model_version: str
+) -> dict[str, Any]:
+    """The briefs columns a generated draft fills, ready to spread into an insert.
+
+    payload keeps the draft exactly as generated. The flat columns are the
+    editable copy the screens read, so they are flattened to what the app
+    expects: shot_list must stay a list of plain strings, because shotsOf() in
+    data/briefs.ts drops anything that isn't one.
+
+    The versions are required here because briefs_payload_traceable rejects a
+    payload without them.
+    """
+    return {
+        "hook": draft.hook.line,
+        "script": " ".join(b.voiceover for b in draft.beats if b.voiceover.strip()),
+        "shot_list": [
+            f"{_seconds(b.start_seconds)}-{_seconds(b.end_seconds)}s  {b.shot}"
+            for b in draft.beats
+        ],
+        "caption": draft.caption,
+        "cta": draft.cta,
+        # Stored without the '#', matching the seed data and mock briefs.
+        "hashtags": [tag.lstrip("#") for tag in draft.hashtags if tag.lstrip("#")],
+        "payload": draft.model_dump(mode="json"),
+        "prompt_version": prompt_version,
+        "model_version": model_version,
+    }
+
+
 # ---------- export ----------
 
 SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schemas"

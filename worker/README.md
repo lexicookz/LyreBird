@@ -66,6 +66,17 @@ python -m app.brief_schema
 
 Then update `types/brief.ts` to match. `npm test` fails until you do.
 
+`to_brief_columns()` turns a draft into the `briefs` columns for an insert.
+Its tests run with:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+```bash
+python -m pytest tests
+```
+
 ```bash
 curl -i localhost:8000/health
 ```
