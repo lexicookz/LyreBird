@@ -32,3 +32,47 @@ jobs:
 
       - name: Check TypeScript
         run: npx tsc --noEmit
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Full history: the scan covers every commit, not just this diff.
+          fetch-depth: 0
+
+      - name: No secret values committed
+        run: |
+          # Matches the shapes real keys take, not the variable names, which
+          # legitimately appear in worker code and .env.example.
+          pattern='eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|AIza[0-9A-Za-z_-]{30,}|sb_secret_[A-Za-z0-9_-]{10,}'
+          # Count only. Never print matches: that would copy a leaked key into
+          # the CI log, where it is just as exposed as in the commit.
+          hits=$(git log -p --all | grep -cE "$pattern" || true)
+          if [ "$hits" -gt 0 ]; then
+            echo "::error::Found $hits line(s) matching a JWT or API key in git history. Rotate the key first, then purge it from history. Run the scan locally to see the matches."
+            exit 1
+          fi
+          echo "OK: no secret values in history."
+
+      - name: No .env files tracked
+        run: |
+          hits=$(git ls-files | grep -cE '(^|/)\.env$' || true)
+          if [ "$hits" -gt 0 ]; then
+            echo "::error::A .env file is tracked. Only worker/.env.example may be committed."
+            git ls-files | grep -E '(^|/)\.env$'
+            exit 1
+          fi
+          echo "OK: no .env files tracked."
+
+      - name: worker/.env.example ships empty
+        run: |
+          hits=$(grep -cE '^[A-Z_]+=.+' worker/.env.example || true)
+          if [ "$hits" -gt 0 ]; then
+            echo "::error::worker/.env.example has $hits filled-in value(s); it must ship with empty placeholders."
+            exit 1
+          fi
+          echo "OK: .env.example placeholders are empty."
