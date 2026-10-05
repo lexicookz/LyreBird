@@ -51,6 +51,11 @@ class Brand(_Base):
     target_audience: str | None = None
     tone_of_voice: str | None = None
     keywords: list[str] = []
+    # Adapt inputs. niche supersedes product_summary, which the app still uses.
+    niche: str | None = None
+    goal: str | None = None
+    constraints: list[str] = []
+    style_profile: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -117,6 +122,10 @@ class Brief(_Base):
     caption: str | None = None
     hashtags: list[str] = []
     status: BriefStatus = "draft"
+    # Set together when Adapt generated the brief; all null for hand-made ones.
+    payload: dict[str, Any] | None = None
+    prompt_version: str | None = None
+    model_version: str | None = None
     created_at: datetime
     updated_at: datetime
 
