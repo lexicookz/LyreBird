@@ -9,7 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.config import settings
 from app.db import get_client
+from app.gemini import PROMPT_VERSION, GeminiError, GeminiTimeout, analyse, delete_file, upload_and_wait
 from app.media import MediaError, downscale_to_480p, extract_thumbnail, probe_duration_seconds
 from app.models import Clip
 
@@ -32,6 +34,18 @@ class PrepareResult(BaseModel):
     duration_seconds: float | None
     original_deleted: bool
     already_prepared: bool = False
+
+
+def _record_failure(client, clip_id: UUID, message: str) -> None:
+    """Mark a clip failed and say why.
+
+    Without the message the app can only show a generic error and offer a
+    blind retry — the spinning-forever case BE-14 is about. Truncated because
+    a provider stack trace can be enormous and the row is read by a phone.
+    """
+    client.table("clips").update(
+        {"status": "failed", "error_message": message[:1000]}
+    ).eq("id", str(clip_id)).execute()
 
 
 def _fetch_clip(client, clip_id: UUID) -> Clip:
@@ -120,7 +134,7 @@ def prepare_clip(clip_id: UUID) -> PrepareResult:
         except MediaError as exc:
             # Leave a trail on the row: a clip stuck at 'processing' forever is
             # indistinguishable from one still in the queue.
-            client.table("clips").update({"status": "failed"}).eq("id", str(clip.id)).execute()
+            _record_failure(client, clip.id, f"Transcode failed: {exc}")
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         prepared_data = prepared.read_bytes()
@@ -174,3 +188,110 @@ def prepare_clip(clip_id: UUID) -> PrepareResult:
             duration_seconds=duration,
             original_deleted=original_deleted,
         )
+
+
+class AnalyseResult(BaseModel):
+    """The analyses row that was written."""
+
+    analysis_id: UUID
+    clip_id: UUID
+    model_version: str
+    prompt_version: str
+    payload: dict
+
+
+@router.post("/{clip_id}/analyse", response_model=AnalyseResult)
+def analyse_clip(clip_id: UUID) -> AnalyseResult:
+    """Send a clip to Gemini and store the breakdown.
+
+    `def` rather than `async def` for the same reason as /prepare: the upload,
+    the poll and the model call all block, so FastAPI runs this in a
+    threadpool instead of stalling the event loop for the whole analysis.
+
+    Deliberately not idempotent. Analyses are append-only and each run records
+    its model_version and prompt_version, because the point of keeping them in
+    their own table is that two runs can be compared rather than one
+    overwriting the other.
+    """
+    client = get_client()
+    clip = _fetch_clip(client, clip_id)
+
+    # Same guard as /prepare. The worker bypasses RLS, so a path outside the
+    # owner's folder is a sign something is wrong with the row, not a file to
+    # go fetch anyway.
+    owner_prefix = f"{clip.owner_id}/"
+    if not clip.storage_path.startswith(owner_prefix):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"clip {clip_id} has storage_path {clip.storage_path!r}, which is not "
+                f"under {owner_prefix!r}."
+            ),
+        )
+
+    try:
+        video_bytes = client.storage.from_(CLIPS_BUCKET).download(clip.storage_path)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"could not download {clip.storage_path!r} from {CLIPS_BUCKET}: {exc}",
+        ) from exc
+
+    uploaded_name: str | None = None
+    with tempfile.TemporaryDirectory(prefix="lyrebird-analyse-") as tmp:
+        source = Path(tmp) / Path(clip.storage_path).name
+        source.write_bytes(video_bytes)
+
+        try:
+            uploaded = upload_and_wait(source)
+            uploaded_name = uploaded.name
+            result = analyse(uploaded)
+        except GeminiTimeout as exc:
+            # Already retried once inside analyse(). 504 rather than 422: the
+            # request is worth repeating later, which a malformed response is
+            # not.
+            _record_failure(client, clip.id, f"Analysis timed out: {exc}")
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
+        except GeminiError as exc:
+            # Fail loudly, store nothing. A clip left at 'processing' forever
+            # is indistinguishable from one still in the queue, so the row
+            # records that this run failed and why.
+            _record_failure(client, clip.id, f"Analysis failed: {exc}")
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            if uploaded_name:
+                delete_file(uploaded_name)
+
+    payload = result.model_dump(mode="json")
+
+    inserted = (
+        client.table("analyses")
+        .insert(
+            {
+                "owner_id": str(clip.owner_id),
+                "clip_id": str(clip.id),
+                "payload": payload,
+                "model_version": settings.gemini_model,
+                "prompt_version": PROMPT_VERSION,
+            }
+        )
+        .execute()
+    )
+    rows = inserted.data or []
+    if not rows:
+        raise HTTPException(status_code=500, detail="analysis succeeded but the row could not be written")
+
+    # Only now is the clip genuinely ready: there is an analysis to show.
+    # error_message is cleared too — a message from an earlier failed run
+    # sitting beside status 'ready' reads as a current problem.
+    client.table("clips").update(
+        {"status": "ready", "error_message": None}
+    ).eq("id", str(clip.id)).execute()
+
+    return AnalyseResult(
+        analysis_id=rows[0]["id"],
+        clip_id=clip.id,
+        model_version=settings.gemini_model,
+        prompt_version=PROMPT_VERSION,
+        payload=payload,
+    )
