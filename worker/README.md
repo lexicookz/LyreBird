@@ -86,6 +86,29 @@ Status codes: `404` no such clip or the file is missing from storage, `409` the
 row's path breaks the convention, `422` ffmpeg failed (the clip is marked
 `failed`), `200` prepared.
 
+## Brief schema
+
+`app/brief_schema.py` defines what Adapt takes in (`BrandProfile`) and what
+Gemini must return (`BriefDraft`). After changing it, re-export the JSON
+Schema files the app and mock data are checked against:
+
+```bash
+python -m app.brief_schema
+```
+
+Then update `types/brief.ts` to match. `npm test` fails until you do.
+
+`to_brief_columns()` turns a draft into the `briefs` columns for an insert.
+Its tests run with:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+```bash
+python -m pytest tests
+```
+
 ```bash
 curl -i localhost:8000/health
 ```
