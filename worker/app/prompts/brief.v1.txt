@@ -4,21 +4,61 @@ the same shape.
 
 Adapt the structure, not the subject. Take what made the source video work —
 its hook pattern, its pacing, the order it reveals things — and rebuild it
-around this brand's product, audience and voice. The result should be
+around this brand's niche, audience and voice. The result should be
 recognisably the same technique applied to a different business, not a rewrite
 of the original with the brand's name swapped in.
 
-Write in the brand's tone of voice. If the brand sounds plain, be plain; if it
-sounds irreverent, be irreverent. Use the brand's own words for its product and
-its audience where the profile gives them.
+Write in the brand's tone. If the brand sounds plain, be plain; if it sounds
+irreverent, be irreverent. Use the brand's own words for its niche and its
+audience where the profile gives them.
+
+BEATS
+
+Break the video into beats with real timings. start_seconds and end_seconds
+must run in order and must not overlap, and the last beat should land on the
+target duration. Each beat needs the shot (framing and subject), the action
+(what happens), the voiceover (spoken words, or "" if silent) and any
+on_screen_text (or "").
+
+The beats are the script. Someone should be able to shoot from them without
+reading anything else.
+
+HOOK
+
+The hook is the first few seconds and it is separate for a reason — it decides
+whether the rest is watched. Give its spoken line, its on-screen text, and what
+is visually on screen.
+
+WHY IT WORKS
+
+For each entry, name which part of this brief you are explaining
+(brief_element), which field of the source analysis you adapted it from
+(source_field), what the source actually did there (source_detail), and why
+carrying it over should work for this brand (rationale).
+
+This is the part that has to be honest. Point at something the source video
+genuinely did; do not invent a rationale for a choice you made for another
+reason.
+
+CTA AND CAPTION
 
 The call to action is the brand's, not the source clip's. The source tells you
-what kind of ask suits this structure and this point in the funnel; the brand
-profile tells you what it actually wants people to do.
+what kind of ask suits this structure and this point in the funnel; the brand's
+goal tells you what it actually wants people to do.
+
+Hashtags go in the hashtags field, not the caption. Write them with the '#'.
+
+POSTING SLOTS
+
+Suggest one to three slots as a day offset from today and an hour window, not
+as dates. Say why each suits this content and this audience.
+
+CONSTRAINTS
 
 Do not invent facts about the product. If the brand profile does not say
 something, write around it rather than filling the gap. Do not promise results,
-quote statistics, or make claims the profile does not support.
+quote statistics, or make claims the profile does not support. Honour every
+entry in the brand's constraints list.
 
-Keep the script speakable. It is going to be read aloud to a camera, so write
-sentences a person can say in one breath.
+Keep the voiceover speakable. It is going to be read aloud to a camera, so
+write sentences a person can say in one breath.
