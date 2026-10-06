@@ -1,0 +1,46 @@
+# The worker image is built from the repo root so it can copy /pipeline in
+# beside the app. That means the whole repo is the build context, and most of
+# it has no business being sent to the daemon.
+
+.git
+.github
+node_modules
+.expo
+dist
+web-build
+
+# The Expo app. The worker never runs it.
+App.tsx
+app.json
+assets
+components
+screens
+data
+types
+__tests__
+__mocks__
+package.json
+package-lock.json
+tsconfig.json
+jest.setup.ts
+babel.config.js
+
+# Secrets and local state.
+.env
+.env.*
+!.env.example
+worker/.env
+worker/.env.*
+!worker/.env.example
+supabase
+
+# Python local artefacts.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Sample videos used by the pipeline scaffold; large and not needed to serve.
+pipeline/eval_vids

@@ -148,7 +148,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       hook: "I used to hit snooze 5 times. Here's what fixed it.",
       transcript:
         'So I used to be the person who hit snooze five times every morning...',
-      onScreenText: '5 SNOOZES → 0',
+      onScreenText: ['5 SNOOZES → 0'],
       shotBeats: [
         'Close up: alarm clock',
         'Cut to: making bed',
@@ -171,7 +171,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       hook: 'Your welcome email has a 3-second window. Most brands waste it.',
       transcript:
         "Let's talk about the one email almost every SaaS company gets wrong...",
-      onScreenText: "3 SECONDS. THAT'S IT.",
+      onScreenText: ["3 SECONDS. THAT'S IT."],
       shotBeats: [
         'Screen recording: inbox',
         'Text overlay: stat callout',
@@ -194,7 +194,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       hook: "10 minutes. That's all it takes if you use this structure.",
       transcript:
         'Every ad script I write follows the same five-part structure...',
-      onScreenText: 'HOOK → PROBLEM → AGITATE → SOLUTION → CTA',
+      onScreenText: ['HOOK → PROBLEM → AGITATE → SOLUTION → CTA'],
       shotBeats: [
         'Talking head intro',
         'Screen recording: notes app',
@@ -253,6 +253,55 @@ export const mockBriefs: Brief[] = [
     status: 'draft',
     created_at: '2026-08-23T09:30:00Z',
     updated_at: '2026-08-23T09:30:00Z',
+  },
+  // The three below exist so the content calendar has a realistic mix to show.
+  {
+    id: 'bbbbbbbb-0000-4000-8000-000000000003',
+    owner_id: OWNER_ID,
+    clip_id: 'cccccccc-0000-4000-8000-000000000005',
+    brand_id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    analysis_id: 'dddddddd-0000-4000-8000-000000000003',
+    hook: 'Last chance before the price goes up',
+    script: 'Open on the pricing page. Circle the old price. Cut to camera: one reason to act today...',
+    shot_list: ['Pricing page close-up', 'Circle the old price', 'Talking head with deadline'],
+    caption: null,
+    cta: 'Link in bio, ends Friday',
+    hashtags: [],
+    status: 'scheduled',
+    created_at: '2026-08-27T09:00:00Z',
+    updated_at: '2026-08-27T09:00:00Z',
+  },
+  {
+    id: 'bbbbbbbb-0000-4000-8000-000000000004',
+    owner_id: OWNER_ID,
+    clip_id: 'cccccccc-0000-4000-8000-000000000002',
+    brand_id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    analysis_id: 'dddddddd-0000-4000-8000-000000000002',
+    hook: 'Three things I check before I hit send',
+    script: null,
+    shot_list: null,
+    caption: null,
+    cta: null,
+    hashtags: [],
+    status: 'draft',
+    created_at: '2026-08-28T15:00:00Z',
+    updated_at: '2026-08-28T15:00:00Z',
+  },
+  {
+    id: 'bbbbbbbb-0000-4000-8000-000000000005',
+    owner_id: OWNER_ID,
+    clip_id: 'cccccccc-0000-4000-8000-000000000001',
+    brand_id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    analysis_id: 'dddddddd-0000-4000-8000-000000000001',
+    hook: 'I bought 11 planners. Nine are in a drawer.',
+    script: 'Stack of planners on the desk. Push nine off the edge, one at a time...',
+    shot_list: ['Planner stack', 'Push them off one by one', 'The one that stayed', 'Spoken CTA'],
+    caption: 'The only planner that survived January 📓',
+    cta: 'Comment PLANNER for the template',
+    hashtags: ['planning'],
+    status: 'published',
+    created_at: '2026-08-15T08:00:00Z',
+    updated_at: '2026-08-15T08:00:00Z',
   },
 ];
 
