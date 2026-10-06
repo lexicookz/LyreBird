@@ -11,10 +11,11 @@ services:
     name: lyrebird-worker
     runtime: docker
 
-    # The Dockerfile lives in /worker, not the repo root — the root is the
-    # Expo app.
-    rootDir: worker
-    dockerfilePath: ./Dockerfile
+    # Built from the repo root rather than /worker: the worker imports the
+    # analysis contract from /pipeline (BE-12), so that directory has to be in
+    # the build context. The root .dockerignore keeps the Expo app and
+    # node_modules out of it.
+    dockerfilePath: ./worker/Dockerfile
 
     plan: free
 

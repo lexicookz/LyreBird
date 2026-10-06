@@ -8,10 +8,17 @@ RUN apt-get update \
 
 WORKDIR /srv
 
-COPY requirements.txt .
+# Built from the REPO ROOT, not from /worker, so that /pipeline can be copied
+# in beside the app. The analysis contract lives there (BE-12) and the worker
+# imports it rather than keeping a second copy that can drift. See the root
+# .dockerignore for what is kept out of the context.
+COPY worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+COPY worker/app ./app
+
+# Lands at /srv/pipeline, which app/analysis.py looks for beside the app.
+COPY pipeline ./pipeline
 
 # Informational only. Railway and Render ignore EXPOSE and route to $PORT.
 EXPOSE 8000

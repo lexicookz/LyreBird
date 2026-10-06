@@ -37,7 +37,7 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
   {
     hook: 'I wasted $4k on skincare so you don’t have to',
     transcript: 'I wasted four thousand dollars on skincare so you don’t have to…',
-    onScreenText: '$4,000 later',
+    onScreenText: ['$4,000 later'],
     shotBeats: ['Handheld close-up, direct address', 'Cut to shelf of products', 'Three fast product holds', 'Back to face, spoken CTA'],
     pacing: 'Fast cuts for the first 10 seconds, then slows for the CTA',
     cta: 'Spoken, not shown',
@@ -47,7 +47,7 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
   {
     hook: 'Three things I check before I buy',
     transcript: 'Three things I check before I buy anything for my skin…',
-    onScreenText: '1. Ingredients 2. Bottle 3. Refills',
+    onScreenText: ['1. Ingredients 2. Bottle 3. Refills'],
     shotBeats: ['Product on bench', 'Close-up of label', 'Pour test', 'Verdict to camera'],
     pacing: 'Even, one beat per point',
     cta: 'Comment which one you check',
@@ -57,7 +57,7 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
   {
     hook: 'Last day at this price',
     transcript: 'This is the last day you can get it at this price…',
-    onScreenText: 'Ends tonight',
+    onScreenText: ['Ends tonight'],
     shotBeats: ['Price card', 'Product in hand', 'Checkout screen'],
     pacing: 'Quick, under 15 seconds',
     cta: 'Link in bio, shown on screen',
