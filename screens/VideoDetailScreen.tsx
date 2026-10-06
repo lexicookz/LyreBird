@@ -51,7 +51,7 @@ export default function VideoDetailScreen({
   const stage = payload ? funnelStages[payload.funnelStage] : undefined;
   const beats = payload?.shotBeats ?? [];
   const shownBeats = showAllBeats ? beats : beats.slice(0, BEATS_PREVIEW);
-  const words = payload?.transcript.trim().split(/\s+/).filter(Boolean).length ?? 0;
+  const words = payload?.transcript?.trim().split(/\s+/).filter(Boolean).length ?? 0;
   const meta = [formatDuration(video.duration_seconds), video.title].filter(Boolean).join(' · ');
 
   return (
