@@ -4,6 +4,10 @@ Text to text: this reads a clip's existing analysis and a brand profile and
 writes a brief. The video is never touched — it was already described by
 /clips/{id}/analyse, and re-uploading it would cost a minute to tell the model
 something the prompt already contains.
+
+The brief shape itself lives in app/brief_schema.py, the single source of
+truth shared with the app through worker/schemas/*.json and types/brief.ts.
+This module only decides which rows to read and when to write.
 """
 
 from __future__ import annotations
@@ -13,9 +17,11 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from app.brief_schema import BrandProfile, to_brief_columns
 from app.config import settings
 from app.db import get_client
 from app.gemini import GeminiError, GeminiTimeout, write_brief
+from app.models import Brand
 from app.prompts import PromptError, load as load_prompt, versions
 
 router = APIRouter(prefix="/briefs", tags=["briefs"])
@@ -27,6 +33,13 @@ class BriefRequest(BaseModel):
 
 
 class BriefResponse(BaseModel):
+    """The briefs row that was written.
+
+    The flat fields are the editable copy the screens read; payload is the
+    draft exactly as the model produced it. Both are returned so a caller can
+    see what was generated as well as what was stored.
+    """
+
     brief_id: UUID
     clip_id: UUID
     brand_id: UUID
@@ -39,6 +52,7 @@ class BriefResponse(BaseModel):
     caption: str
     hashtags: list[str]
     cta: str
+    payload: dict
 
 
 def _one(client, table: str, row_id: UUID, label: str) -> dict:
@@ -81,26 +95,39 @@ def _generate_and_insert(
     analysis = analyses[0]
 
     try:
-        draft, used_version = write_brief(analysis["payload"], brand, prompt_version)
+        profile = BrandProfile.from_brand(Brand.model_validate(brand))
+    except Exception as exc:
+        # A brands row that will not map is a data problem, not a model one,
+        # and would otherwise surface as a confusing 422 from the model call.
+        raise HTTPException(
+            status_code=409,
+            detail=f"brand {brand['id']} cannot be read as a profile: {exc}",
+        ) from exc
+
+    try:
+        draft, used_version = write_brief(analysis["payload"], profile, prompt_version)
     except GeminiTimeout as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except GeminiError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # to_brief_columns owns the mapping from draft to columns: the flat ones
+    # the screens edit, plus payload exactly as generated. Deriving shot_list
+    # or script here instead would be a second definition of that mapping, and
+    # the two would drift the first time the schema changed.
+    columns = to_brief_columns(
+        draft, prompt_version=used_version, model_version=settings.gemini_model
+    )
+
     inserted = (
         client.table("briefs")
         .insert(
             {
+                **columns,
                 "owner_id": clip["owner_id"],
                 "clip_id": clip["id"],
                 "brand_id": brand["id"],
                 "analysis_id": analysis["id"],
-                "hook": draft.hook,
-                "script": draft.script,
-                "shot_list": draft.shotList,
-                "caption": draft.caption,
-                "hashtags": draft.hashtags,
-                "cta": draft.cta,
             }
         )
         .execute()
@@ -118,12 +145,13 @@ def _generate_and_insert(
         analysis_id=analysis["id"],
         model_version=settings.gemini_model,
         prompt_version=used_version,
-        hook=draft.hook,
-        script=draft.script,
-        shot_list=draft.shotList,
-        caption=draft.caption,
-        hashtags=draft.hashtags,
-        cta=draft.cta,
+        hook=columns["hook"],
+        script=columns["script"],
+        shot_list=columns["shot_list"],
+        caption=columns["caption"],
+        hashtags=columns["hashtags"],
+        cta=columns["cta"],
+        payload=columns["payload"],
     )
 
 

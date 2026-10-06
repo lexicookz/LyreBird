@@ -19,7 +19,7 @@ import json
 from pydantic import BaseModel
 
 from app.analysis import AnalysisResult
-from app.brief import BriefDraft
+from app.brief_schema import BrandProfile, BriefDraft
 from app.config import settings
 from app.prompts import load, load_latest
 
@@ -203,7 +203,7 @@ def analyse(video_file, prompt_version: str | None = None) -> tuple[AnalysisResu
 
 def write_brief(
     analysis_payload: dict,
-    brand: dict,
+    brand_profile: BrandProfile,
     prompt_version: str | None = None,
 ) -> tuple[BriefDraft, str]:
     """Adapt one clip's analysis into a brief for one brand.
@@ -211,13 +211,17 @@ def write_brief(
     Text to text: the video is never re-uploaded. The analysis already
     describes it, and sending the file again would cost an upload and a
     minute to tell the model something it is being given in the prompt.
+
+    Takes a BrandProfile rather than a raw brands row, so the mapping from
+    column to prompt lives in one place (BrandProfile.from_brand) instead of
+    being re-derived here.
     """
     prompt, version = load(prompt_version) if prompt_version else load_latest(BRIEF_PROMPT_NAME)
 
     contents = [
         prompt,
         "SOURCE VIDEO BREAKDOWN:\n" + json.dumps(analysis_payload, indent=2, ensure_ascii=False),
-        "BRAND PROFILE:\n" + json.dumps(brand, indent=2, ensure_ascii=False),
+        "BRAND PROFILE:\n" + brand_profile.model_dump_json(indent=2),
     ]
     result = _call_model(contents, BriefDraft)
     return result, version  # type: ignore[return-value]
