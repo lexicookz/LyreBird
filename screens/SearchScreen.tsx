@@ -35,7 +35,7 @@ export default function SearchScreen({
   const clipResults = q
     ? clips.filter((c) => {
         const p = analysisByClip.get(c.id)?.payload;
-        return matches(q, [c.title, ...c.tags, p?.hook, p?.onScreenText, p?.transcript, p?.cta]);
+        return matches(q, [c.title, ...c.tags, p?.hook, ...(p?.onScreenText ?? []), p?.transcript, p?.cta]);
       })
     : [];
   const briefResults = q

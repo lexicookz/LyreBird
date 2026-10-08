@@ -52,3 +52,6 @@ __pycache__/
 
 # Supabase CLI scratch state
 supabase/.temp/
+
+# Supabase CLI local branch state
+supabase/.branches/

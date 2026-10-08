@@ -1,0 +1,19 @@
+# Keep the build context small and free of secrets.
+#
+# The Dockerfile only COPYs requirements.txt and app/, so none of this would
+# reach the image — but everything here is still uploaded to the daemon on
+# every build, and .env holds the service role and Gemini keys.
+
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+README.md

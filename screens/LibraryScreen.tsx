@@ -341,7 +341,7 @@ export default function LibraryScreen({
       const a = analysisByClip.get(clip.id);
       if (stageFilter !== 'all' && a?.payload.funnelStage !== stageFilter) return false;
       if (!q) return true;
-      return [clip.title ?? '', a?.payload.hook ?? '', a?.payload.onScreenText ?? '', ...clip.tags]
+      return [clip.title ?? '', a?.payload.hook ?? '', (a?.payload.onScreenText ?? []).join(' '), ...clip.tags]
         .some((text) => text.toLowerCase().includes(q));
     });
     const byDate = (x: Clip, y: Clip) => Date.parse(y.created_at) - Date.parse(x.created_at);
