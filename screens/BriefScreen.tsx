@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { BackButton, Eyebrow } from '../components/ui';
 import { BriefEdit, briefAsText, shotsOf } from '../data/briefs';
 import { CALENDAR_STATUSES, CalendarItem } from '../data/calendar';
@@ -206,7 +207,7 @@ export default function BriefScreen({
             accessibilityLabel="Share brief"
             style={styles.share}
           >
-            <View style={styles.shareIcon} />
+            <Ionicons name="share-outline" size={21} color={colors.ink} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -397,12 +398,5 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 3,
-  },
-  shareIcon: {
-    width: 17,
-    height: 17,
-    borderRadius: 3,
-    borderWidth: 1.8,
-    borderColor: colors.ink,
   },
 });

@@ -5,7 +5,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MAX_CLIP_SECONDS } from '../data/library';
-import { fonts, radius, Colors, useStyles } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
+import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
 
 export default function AddVideoMenu({
   bottom,
@@ -18,6 +19,7 @@ export default function AddVideoMenu({
   onClose: () => void;
 }) {
   const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <>
       <Pressable
@@ -35,7 +37,7 @@ export default function AddVideoMenu({
           style={({ pressed }) => [styles.option, pressed && { opacity: 0.8 }]}
         >
           <View style={styles.optionIcon}>
-            <View style={styles.optionIconInner} />
+            <Ionicons name="images-outline" size={17} color={colors.onPastel} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.optionTitle}>Camera roll</Text>
@@ -94,13 +96,6 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  optionIconInner: {
-    width: 16,
-    height: 13,
-    borderRadius: 3,
-    borderWidth: 1.6,
-    borderColor: colors.onPastel,
   },
   optionTitle: {
     fontFamily: fonts.bodySemiBold,
