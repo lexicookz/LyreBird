@@ -18,7 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Eyebrow, PrimaryButton } from '../components/ui';
 import { MIN_PASSWORD_LENGTH, isValidEmail } from '../data/account';
-import { colors, fonts, pagePadding, radius } from '../theme';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 
 export type AuthMode = 'login' | 'signup';
 
@@ -51,6 +51,8 @@ export default function AuthScreen({
   onSubmit: (email: string) => void;
   onSwitchMode: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -162,10 +164,10 @@ export default function AuthScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     flexGrow: 1,
@@ -191,7 +193,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.pink,
     transform: [{ rotate: '-8deg' }],
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 5,
@@ -200,7 +202,7 @@ const styles = StyleSheet.create({
   tagText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 12,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   title: {
     fontFamily: fonts.display,
@@ -250,10 +252,10 @@ const styles = StyleSheet.create({
   errorText: {
     fontFamily: fonts.body,
     fontSize: 12.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   buttonShadow: {
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.22,
     shadowRadius: 7,

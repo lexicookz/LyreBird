@@ -1,40 +1,13 @@
 // theme/index.ts
-// Design tokens from the Lyrebird Figma file (3ZIEyMxL090hDkhfIhzWiH). The file
-// has no Figma variables, so these values were read off the frames directly.
-// Use these instead of hardcoding hex values in screens.
+// Design tokens from the Lyrebird Figma file (3ZIEyMxL090hDkhfIhzWiH) and the
+// dark-theme exports. The files have no Figma variables, so these values were
+// read off the frames directly. Use these instead of hardcoding hex values.
+//
+// Colours come in two palettes with the same keys. Screens never import a
+// palette directly: they read the current one from useTheme() (theme/ThemeContext),
+// which follows the phone's light/dark setting or the choice in Settings.
 
-import type { FunnelStage } from '../types';
-
-export const colors = {
-  // Brand
-  ink: '#33241c', // primary text, dark buttons, tab bar
-  cream: '#fbf7f4', // text on ink
-  white: '#ffffff',
-
-  // Pastels (funnel stages and accents)
-  green: '#dfeec8',
-  lilac: '#dcd4f5',
-  pink: '#f7d9e3',
-  sky: '#d6e6f5',
-  peach: '#fbdcc4',
-
-  // Text
-  textStrong: '#43332b',
-  textBody: '#5a463a',
-  textLabel: '#6b5548', // uppercase field labels, "Skip for now"
-  textMuted: '#7a7270',
-  textFaint: '#8a8280',
-  textPlaceholder: '#a09896',
-  textEyebrow: '#98908e', // "LYREBIRD" wordmark
-  icon: '#54423a',
-
-  // Surfaces
-  field: '#f7f6f5', // inputs, round back button
-  track: '#efedea', // inactive progress segments, avatar placeholder
-  hairline: 'rgba(51,36,28,0.16)',
-  scrim: 'rgba(51,36,28,0.72)', // duration badge on thumbnails
-  frost: 'rgba(255,255,255,0.72)', // pill on a pastel card
-} as const;
+export * from './palette';
 
 // Sora carries headings and buttons; Inter carries everything else. With custom
 // fonts, pick the weight through the family name, not fontWeight -- Android
@@ -56,17 +29,5 @@ export const radius = {
 /** Horizontal page margin used on every screen in the designs. */
 export const pagePadding = 22;
 
-// ---------- funnel stages ----------
-// The pipeline writes TOFU/MOFU/BOFU (see types/index.ts); the designs show
-// Awareness/Consider/Convert, each with its own pastel. Map here, once.
-
-export const funnelStages: Record<
-  FunnelStage,
-  { label: string; color: string }
-> = {
-  TOFU: { label: 'Awareness', color: colors.green },
-  MOFU: { label: 'Consider', color: colors.lilac },
-  BOFU: { label: 'Convert', color: colors.pink },
-};
-
-export const FUNNEL_ORDER: FunnelStage[] = ['TOFU', 'MOFU', 'BOFU'];
+export { ThemeProvider, useTheme, useStyles } from './ThemeContext';
+export type { Appearance } from './ThemeContext';

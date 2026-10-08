@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton, Eyebrow } from '../components/ui';
-import { colors, fonts, funnelStages, pagePadding, radius } from '../theme';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FormatTag, TypedAnalysis, VideoFormat } from '../types';
 
 const FORMAT_LABELS: Record<VideoFormat, string> = {
@@ -47,11 +47,13 @@ export default function VideoDetailScreen({
   /** Asks for confirmation itself, then deletes. */
   onDelete: () => void;
 }) {
+  const { colors, stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const [showAllBeats, setShowAllBeats] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   const payload = video.status === 'ready' ? analysis?.payload : undefined;
-  const stage = payload ? funnelStages[payload.funnelStage] : undefined;
+  const stage = payload ? stages[payload.funnelStage] : undefined;
   const beats = payload?.shotBeats ?? [];
   const shownBeats = showAllBeats ? beats : beats.slice(0, BEATS_PREVIEW);
   const words = payload?.transcript?.trim().split(/\s+/).filter(Boolean).length ?? 0;
@@ -105,7 +107,7 @@ export default function VideoDetailScreen({
         ) : (
           <>
             <View style={[styles.card, { backgroundColor: colors.green, gap: 8 }]}>
-              <Eyebrow color={colors.textBody}>Hook · 0:00–0:03 verbatim</Eyebrow>
+              <Eyebrow color={colors.onPastelBody}>Hook · 0:00–0:03 verbatim</Eyebrow>
               <Text style={styles.hook}>“{payload.hook}”</Text>
               {!!payload.pacing && <Text style={styles.hookNote}>{payload.pacing}</Text>}
             </View>
@@ -133,8 +135,8 @@ export default function VideoDetailScreen({
 
             {!!payload.cta && (
               <View style={[styles.card, { backgroundColor: colors.pink, gap: 6 }]}>
-                <Eyebrow color={colors.textBody}>Call to action</Eyebrow>
-                <Text style={styles.cardBody}>{payload.cta}</Text>
+                <Eyebrow color={colors.onPastelBody}>Call to action</Eyebrow>
+                <Text style={styles.pastelBody}>{payload.cta}</Text>
               </View>
             )}
 
@@ -178,10 +180,10 @@ export default function VideoDetailScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -206,12 +208,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: colors.textStrong,
+    backgroundColor: colors.onPastelBody,
   },
   stageText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 12.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   heading: {
     flexDirection: 'row',
@@ -222,7 +224,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 90,
     borderRadius: radius.card,
-    backgroundColor: '#e9e9e8',
+    backgroundColor: colors.thumb,
   },
   title: {
     fontFamily: fonts.display,
@@ -262,13 +264,13 @@ const styles = StyleSheet.create({
     fontSize: 19,
     lineHeight: 24,
     letterSpacing: -0.4,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   hookNote: {
     fontFamily: fonts.body,
     fontSize: 12.5,
     lineHeight: 18,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -295,7 +297,7 @@ const styles = StyleSheet.create({
   },
   beatDivider: {
     borderTopWidth: StyleSheet.hairlineWidth * 2,
-    borderTopColor: 'rgba(51,36,28,0.07)',
+    borderTopColor: colors.divider,
   },
   beatIndex: {
     width: 22,
@@ -317,12 +319,18 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     color: colors.textStrong,
   },
+  pastelBody: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.onPastel,
+  },
   transcript: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     borderRadius: radius.card,
-    backgroundColor: '#f4f3f1',
+    backgroundColor: colors.fieldAlt,
     paddingHorizontal: 16,
     paddingVertical: 13,
   },
@@ -349,7 +357,7 @@ const styles = StyleSheet.create({
   deleteText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 12.5,
-    color: '#8a4b3c',
+    color: colors.danger,
   },
   footer: {
     paddingHorizontal: pagePadding,

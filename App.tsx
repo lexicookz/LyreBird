@@ -15,6 +15,7 @@ import {
   BrandSetup,
   completeOnboarding,
   loadOnboarding,
+  brandColorOf,
   saveBrandSetup,
 } from './data/brandSetup';
 import { Account, loadAccount, signIn, signOut } from './data/account';
@@ -29,7 +30,8 @@ import { mockAnalyses, mockBrandProfile, mockClips } from './data/mockVideos';
 import { Brief, Clip, FunnelStage } from './types';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
-import { colors } from './theme';
+import { Colors, ThemeProvider, useStyles, useTheme } from './theme';
+import { StatusBar } from 'expo-status-bar';
 import { fontAssets } from './theme/fontAssets';
 
 // A "pushed" screen sits on top of the tabs, full-screen, no bottom bar.
@@ -45,6 +47,8 @@ type PushedScreen =
 type Stage = 'loading' | 'opener' | 'signup' | 'login' | 'brand' | 'done';
 
 function AppContent() {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
   const [activeTab, setActiveTab] = useState<TabKey>('library');
   const [pushed, setPushed] = useState<PushedScreen | null>(null);
   const [stage, setStage] = useState<Stage>('loading');
@@ -90,6 +94,8 @@ function AppContent() {
   }
 
   const briefClipIds = new Set(briefs.briefs.map((b) => b.clip_id));
+  /** Background of the brand initial shown in headers and Settings. */
+  const brandColor = colors[brandColorOf(brandSetup)];
 
   // ---------- actions ----------
 
@@ -236,6 +242,7 @@ function AppContent() {
     return (
       <SettingsScreen
         brandName={brandSetup?.name}
+        brandColor={brandColor}
         email={account?.email}
         brandComplete={complete}
         onOpenBrand={() => setPushed({ type: 'brandProfile', backTo: { type: 'settings' } })}
@@ -302,6 +309,7 @@ function AppContent() {
             lastImportCount={library.lastImportCount}
             now={library.now}
             brandName={brandSetup?.name}
+            brandColor={brandColor}
             focus={brandSetup?.focus}
             onSelectVideo={(clip) => setPushed({ type: 'detail', clipId: clip.id })}
             onOpenBrandProfile={openSettings}
@@ -329,6 +337,7 @@ function AppContent() {
             calendarItems={calendar.items}
             stageOf={stageOf}
             brandName={brandSetup?.name}
+            brandColor={brandColor}
             onSelectBrief={(brief) => setPushed({ type: 'brief', briefId: brief.id })}
             onSchedule={setSchedulingBriefId}
             onOpenBrandProfile={openSettings}
@@ -341,6 +350,7 @@ function AppContent() {
             briefs={briefs.briefs}
             clipFor={clipFor}
             brandName={brandSetup?.name}
+            brandColor={brandColor}
             onOpenBrandProfile={openSettings}
             onEditEntry={setSchedulingBriefId}
           />
@@ -392,15 +402,21 @@ function AppContent() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   content: {
     flex: 1,
   },
 });
+
+/** Light clock and battery icons on the dark theme, dark ones on the light theme. */
+function ThemedStatusBar() {
+  const { scheme } = useTheme();
+  return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
+}
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);
@@ -411,7 +427,10 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <ThemeProvider>
+        <ThemedStatusBar />
       <AppContent />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

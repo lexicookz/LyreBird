@@ -6,8 +6,8 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { BackButton } from '../components/ui';
-import { colors, fonts, pagePadding, radius } from '../theme';
+import { BackButton, BrandMark } from '../components/ui';
+import { fonts, pagePadding, radius, Appearance, Colors, useStyles, useTheme } from '../theme';
 
 function photoAccessLabel(p: ImagePicker.MediaLibraryPermissionResponse | null) {
   if (!p) return null;
@@ -18,6 +18,7 @@ function photoAccessLabel(p: ImagePicker.MediaLibraryPermissionResponse | null) 
 }
 
 function Chevron() {
+  const styles = useStyles(makeStyles);
   return <View style={styles.chevron} />;
 }
 
@@ -37,13 +38,15 @@ function Row({
   onPress: () => void;
   last?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && { opacity: 0.7 }]}
     >
-      <Text style={[styles.rowLabel, danger && { color: '#8a4b3c' }]}>{label}</Text>
+      <Text style={[styles.rowLabel, danger && { color: colors.danger }]}>{label}</Text>
       {value ? (
         pill ? (
           <View style={styles.valuePill}>
@@ -58,8 +61,15 @@ function Row({
   );
 }
 
+const APPEARANCE_OPTIONS: { key: Appearance; label: string }[] = [
+  { key: 'system', label: 'System' },
+  { key: 'light', label: 'Light' },
+  { key: 'dark', label: 'Dark' },
+];
+
 export default function SettingsScreen({
   brandName,
+  brandColor,
   email,
   brandComplete,
   onOpenBrand,
@@ -68,6 +78,7 @@ export default function SettingsScreen({
   onBack,
 }: {
   brandName?: string;
+  brandColor?: string;
   email?: string;
   /** Whether the brand profile has its main answers filled in. */
   brandComplete: boolean;
@@ -76,6 +87,8 @@ export default function SettingsScreen({
   onSignOut: () => void;
   onBack: () => void;
 }) {
+  const styles = useStyles(makeStyles);
+  const { appearance, setAppearance } = useTheme();
   const [photos, setPhotos] = useState<ImagePicker.MediaLibraryPermissionResponse | null>(null);
 
   useEffect(() => {
@@ -85,13 +98,11 @@ export default function SettingsScreen({
   }, []);
 
   function confirmSignOut() {
-    Alert.alert('Sign out?', 'This clears your brand setup and takes you back to the start.', [
+    Alert.alert('Sign out?', 'Your videos, briefs and brand stay on this phone for when you log back in.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: onSignOut },
     ]);
   }
-
-  const initial = (brandName?.trim()[0] ?? '').toUpperCase();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -100,9 +111,7 @@ export default function SettingsScreen({
         <Text style={styles.title}>Settings</Text>
 
         <Pressable onPress={onOpenBrand} style={styles.account} accessibilityRole="button">
-          <View style={styles.tile}>
-            <Text style={styles.tileText}>{initial || '?'}</Text>
-          </View>
+          <BrandMark name={brandName} color={brandColor} size={42} shape="square" />
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.accountName}>{brandName || 'Your brand'}</Text>
             {!!email && <Text style={styles.accountEmail}>{email}</Text>}
@@ -126,6 +135,31 @@ export default function SettingsScreen({
           />
         </View>
 
+        <Text style={styles.section}>APPEARANCE</Text>
+        <View style={[styles.group, styles.appearanceGroup]}>
+          <View style={styles.segment} accessibilityRole="radiogroup">
+            {APPEARANCE_OPTIONS.map((option) => {
+              const active = appearance === option.key;
+              return (
+                <Pressable
+                  key={option.key}
+                  onPress={() => setAppearance(option.key)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  style={[styles.segmentItem, active && styles.segmentItemActive]}
+                >
+                  <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.appearanceHint}>
+            {appearance === 'system' ? 'Follows your phone’s light or dark setting.' : `Always ${appearance}.`}
+          </Text>
+        </View>
+
         <Text style={styles.section}>DATA</Text>
         <View style={styles.group}>
           <Row label="Export my briefs" onPress={onExportBriefs} />
@@ -136,10 +170,10 @@ export default function SettingsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -163,28 +197,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 15,
   },
-  tile: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.card,
-    backgroundColor: colors.field,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tileText: {
-    fontFamily: fonts.heading,
-    fontSize: 17,
-    color: colors.ink,
-  },
   accountName: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 14.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   accountEmail: {
     fontFamily: fonts.body,
     fontSize: 12,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
   section: {
     fontFamily: fonts.bodySemiBold,
@@ -195,13 +216,45 @@ const styles = StyleSheet.create({
   },
   group: {
     borderRadius: radius.card,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     paddingHorizontal: 15,
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 2,
+  },
+  appearanceGroup: {
+    paddingVertical: 12,
+    gap: 10,
+  },
+  segment: {
+    flexDirection: 'row',
+    padding: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.field,
+  },
+  segmentItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+  },
+  segmentItemActive: {
+    backgroundColor: colors.ink,
+  },
+  segmentText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.textLabel,
+  },
+  segmentTextActive: {
+    color: colors.cream,
+  },
+  appearanceHint: {
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.textFaint,
   },
   row: {
     flexDirection: 'row',
@@ -211,7 +264,7 @@ const styles = StyleSheet.create({
   },
   rowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth * 2,
-    borderBottomColor: 'rgba(51,36,28,0.07)',
+    borderBottomColor: colors.divider,
   },
   rowLabel: {
     flex: 1,
@@ -233,7 +286,7 @@ const styles = StyleSheet.create({
   valuePillText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   chevron: {
     width: 7,

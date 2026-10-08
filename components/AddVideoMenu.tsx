@@ -5,7 +5,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MAX_CLIP_SECONDS } from '../data/library';
-import { colors, fonts, radius } from '../theme';
+import { fonts, radius, Colors, useStyles } from '../theme';
 
 export default function AddVideoMenu({
   bottom,
@@ -17,6 +17,7 @@ export default function AddVideoMenu({
   onCameraRoll: () => void;
   onClose: () => void;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <>
       <Pressable
@@ -51,14 +52,14 @@ export default function AddVideoMenu({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   scrim: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(51,36,28,0.3)',
+    backgroundColor: colors.overlay,
   },
   card: {
     position: 'absolute',
@@ -90,7 +91,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radius.pill,
-    backgroundColor: '#c5d6ae',
+    backgroundColor: colors.green,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -99,7 +100,7 @@ const styles = StyleSheet.create({
     height: 13,
     borderRadius: 3,
     borderWidth: 1.6,
-    borderColor: colors.ink,
+    borderColor: colors.onPastel,
   },
   optionTitle: {
     fontFamily: fonts.bodySemiBold,
@@ -109,28 +110,28 @@ const styles = StyleSheet.create({
   optionSub: {
     fontFamily: fonts.body,
     fontSize: 11,
-    color: 'rgba(251,247,244,0.5)',
+    color: colors.creamSoft,
   },
   badge: {
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(251,247,244,0.12)',
+    backgroundColor: colors.creamFaint,
   },
   badgeText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 9,
     letterSpacing: 1,
-    color: 'rgba(251,247,244,0.7)',
+    color: colors.creamSoft,
   },
   divider: {
     height: StyleSheet.hairlineWidth * 2,
-    backgroundColor: 'rgba(251,247,244,0.1)',
+    backgroundColor: colors.creamFaint,
     marginBottom: 14,
   },
   note: {
     fontFamily: fonts.body,
     fontSize: 11,
-    color: 'rgba(251,247,244,0.45)',
+    color: colors.creamMuted,
   },
 });

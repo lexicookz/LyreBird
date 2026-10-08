@@ -7,6 +7,26 @@ import App from '../App';
 import { sampleCalendar } from '../data/calendar';
 import { sampleLibrary } from '../data/library';
 import { mockBriefs } from '../data/mockVideos';
+import { BRAND_COLORS, brandColorOf } from '../data/brandSetup';
+import { darkColors, lightColors } from '../theme';
+
+describe('palettes', () => {
+  test('light and dark have exactly the same colour names', () => {
+    expect(Object.keys(darkColors).sort()).toEqual(Object.keys(lightColors).sort());
+  });
+
+  test('text on pastels stays dark in both themes', () => {
+    expect(darkColors.onPastel).toBe(lightColors.onPastel);
+  });
+});
+
+describe('brandColorOf', () => {
+  test('picks the same colour for the same name, and honours a chosen one', () => {
+    expect(brandColorOf({ name: 'Nima Studio' })).toBe(brandColorOf({ name: '  nima studio ' }));
+    expect(BRAND_COLORS).toContain(brandColorOf({ name: 'Nima Studio' }));
+    expect(brandColorOf({ name: 'Nima Studio', color: 'peach' })).toBe('peach');
+  });
+});
 
 jest.mock('expo-image-picker', () => ({
   getMediaLibraryPermissionsAsync: jest.fn(async () => ({
@@ -322,6 +342,33 @@ describe('App', () => {
     expect(JSON.parse((await AsyncStorage.getItem('lyrebird.brandSetup')) ?? '{}')).toMatchObject({
       target_audience: 'Busy parents',
     });
+  });
+
+  test('the brand colour can be changed on Branding and is saved', async () => {
+    await signedIn();
+    const { findByLabelText, findByText, getByLabelText, getByText } = await render(<App />);
+    const before = brandColorOf({ name: 'Nima Studio' });
+
+    await fireEvent.press(await findByLabelText('Settings'));
+    await fireEvent.press(await findByText('Brand profile'));
+    await fireEvent.press(getByLabelText(`Brand colour, ${before}. Tap to change.`));
+    await fireEvent.press(getByText('Save'));
+
+    const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.brandSetup')) ?? '{}');
+    expect(saved.color).toBeDefined();
+    expect(saved.color).not.toBe(before);
+  });
+
+  test('Appearance in Settings can pin the theme to dark, and the choice is saved', async () => {
+    await signedIn();
+    const { findByLabelText, findByText, getByRole } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Settings'));
+    expect(await findByText('Follows your phone’s light or dark setting.')).toBeTruthy();
+    await fireEvent.press(getByRole('radio', { name: 'Dark' }));
+
+    expect(await findByText('Always dark.')).toBeTruthy();
+    expect(await AsyncStorage.getItem('lyrebird.appearance')).toBe('dark');
   });
 
   test('Export my briefs shares them as text', async () => {

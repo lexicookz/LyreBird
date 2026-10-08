@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MonthGrid, { DayMark } from '../components/MonthGrid';
-import { Eyebrow } from '../components/ui';
+import { BrandMark, Eyebrow } from '../components/ui';
 import {
   CALENDAR_STATUSES,
   CalendarItem,
@@ -25,7 +25,7 @@ import {
   toISODate,
 } from '../data/calendar';
 import { shotsOf } from '../data/briefs';
-import { colors, fonts, FUNNEL_ORDER, funnelStages, pagePadding, radius } from '../theme';
+import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Brief, Clip, FunnelStage } from '../types';
 
 type Range = 'week' | 'month' | 'year';
@@ -77,11 +77,13 @@ function EntryCard({
   clip: Clip | undefined;
   onPress: () => void;
 }) {
+  const { stages } = useTheme();
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      style={[styles.entry, { backgroundColor: funnelStages[item.stage].color }]}
+      style={[styles.entry, { backgroundColor: stages[item.stage].color }]}
     >
       <Image
         source={STAGE_MASCOTS[item.stage]}
@@ -114,6 +116,8 @@ function MiniMonth({
   count: number;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const leading = (new Date(year, month, 1).getDay() + 6) % 7;
   const days = new Date(year, month + 1, 0).getDate();
   const cells: (string | null)[] = [
@@ -160,6 +164,7 @@ export default function CalendarScreen({
   briefs,
   clipFor,
   brandName,
+  brandColor,
   onOpenBrandProfile,
   onEditEntry,
 }: {
@@ -168,10 +173,13 @@ export default function CalendarScreen({
   /** For each entry's video length. */
   clipFor: (clipId: string) => Clip | undefined;
   brandName?: string;
+  brandColor?: string;
   onOpenBrandProfile: () => void;
   /** Opens the schedule sheet for an entry's brief. */
   onEditEntry: (briefId: string) => void;
 }) {
+  const { colors, stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const today = new Date();
   const todayISO = toISODate(today);
   const [range, setRange] = useState<Range>('week');
@@ -188,7 +196,7 @@ export default function CalendarScreen({
     [items, briefsById]
   );
   const marks = useMemo(
-    () => new Map(entries.map((e) => [e.date, { color: funnelStages[e.stage].color }])),
+    () => new Map(entries.map((e) => [e.date, { color: stages[e.stage].color }])),
     [entries]
   );
 
@@ -343,8 +351,8 @@ export default function CalendarScreen({
         <View style={styles.legend}>
           {FUNNEL_ORDER.map((s) => (
             <View key={s} style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: funnelStages[s].color }]} />
-              <Text style={styles.legendText}>{funnelStages[s].label}</Text>
+              <View style={[styles.legendSwatch, { backgroundColor: stages[s].color }]} />
+              <Text style={styles.legendText}>{stages[s].label}</Text>
             </View>
           ))}
         </View>
@@ -371,7 +379,7 @@ export default function CalendarScreen({
             <Text style={styles.bestBody}>
               {numberWord(bestList.length)} filmed
               {bestStage.n > 0
-                ? `, ${bestStage.n === bestList.length ? 'all' : numberWord(bestStage.n).toLowerCase()} of them ${funnelStages[bestStage.stage].label.toLowerCase()}`
+                ? `, ${bestStage.n === bestList.length ? 'all' : numberWord(bestStage.n).toLowerCase()} of them ${stages[bestStage.stage].label.toLowerCase()}`
                 : ''}
               .
             </Text>
@@ -381,7 +389,6 @@ export default function CalendarScreen({
     );
   }
 
-  const brandInitial = (brandName?.trim()[0] ?? '').toUpperCase();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -409,14 +416,14 @@ export default function CalendarScreen({
             <Pressable onPress={() => shift(1)} style={styles.navButton} accessibilityRole="button" accessibilityLabel={`Next ${range}`} hitSlop={4}>
               <View style={[styles.navChevron, { transform: [{ rotate: '45deg' }], marginRight: 3 }]} />
             </Pressable>
-            <Pressable
-              onPress={onOpenBrandProfile}
-              style={styles.avatar}
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-            >
-              {!!brandInitial && <Text style={styles.avatarText}>{brandInitial}</Text>}
-            </Pressable>
+            <View style={{ marginLeft: 4 }}>
+              <BrandMark
+                name={brandName}
+                color={brandColor}
+                onPress={onOpenBrandProfile}
+                accessibilityLabel="Settings"
+              />
+            </View>
           </View>
         </View>
 
@@ -428,10 +435,10 @@ export default function CalendarScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -486,20 +493,6 @@ const styles = StyleSheet.create({
     borderRightWidth: 1.6,
     borderColor: colors.textStrong,
   },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    backgroundColor: colors.track,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
-  },
-  avatarText: {
-    fontFamily: fonts.heading,
-    fontSize: 13,
-    color: colors.ink,
-  },
   title: {
     fontFamily: fonts.display,
     fontSize: 32,
@@ -548,7 +541,7 @@ const styles = StyleSheet.create({
   },
   stripNumberMarked: {
     fontFamily: fonts.heading,
-    color: colors.ink,
+    color: colors.onPastel,
   },
 
   // entries
@@ -580,7 +573,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 10.5,
     letterSpacing: 1.3,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
   statusPill: {
     paddingHorizontal: 11,
@@ -591,20 +584,20 @@ const styles = StyleSheet.create({
   statusPillText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   entryHook: {
     fontFamily: fonts.heading,
     fontSize: 16,
     lineHeight: 20.5,
     letterSpacing: -0.3,
-    color: colors.ink,
+    color: colors.onPastel,
     marginRight: 64,
   },
   entryMeta: {
     fontFamily: fonts.body,
     fontSize: 12,
-    color: colors.textBody,
+    color: colors.onPastelBody,
     marginRight: 64,
   },
   empty: {
@@ -652,8 +645,8 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 8,
     borderRadius: radius.card,
-    backgroundColor: colors.white,
-    shadowColor: colors.ink,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.07,
     shadowRadius: 5,
@@ -696,11 +689,11 @@ const styles = StyleSheet.create({
   bestTitle: {
     fontFamily: fonts.heading,
     fontSize: 14.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   bestBody: {
     fontFamily: fonts.body,
     fontSize: 12,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
 });

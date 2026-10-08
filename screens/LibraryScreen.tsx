@@ -17,10 +17,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomSheet from '../components/BottomSheet';
-import { PrimaryButton } from '../components/ui';
+import { BrandMark, PrimaryButton } from '../components/ui';
 import { useTabBarSpace } from '../components/BottomTabBar';
 import { analysisProgress } from '../data/library';
-import { colors, fonts, FUNNEL_ORDER, funnelStages, pagePadding, radius } from '../theme';
+import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FunnelStage, TypedAnalysis } from '../types';
 
 type StageFilter = 'all' | FunnelStage;
@@ -63,6 +63,7 @@ function savedAgo(iso: string, now: number) {
 // ---------- icons ----------
 
 function SearchIcon() {
+  const icon = useStyles(makeIconStyles);
   return (
     <View style={icon.search}>
       <View style={icon.searchRing} />
@@ -72,6 +73,7 @@ function SearchIcon() {
 }
 
 function FilterIcon() {
+  const icon = useStyles(makeIconStyles);
   return (
     <View style={icon.filter}>
       {[16, 11, 6].map((w) => (
@@ -82,6 +84,7 @@ function FilterIcon() {
 }
 
 function PlayButton() {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.play}>
       <View style={styles.playTriangle} />
@@ -90,6 +93,7 @@ function PlayButton() {
 }
 
 function Spinner() {
+  const styles = useStyles(makeStyles);
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -122,6 +126,8 @@ type CardProps = {
 };
 
 function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry, onDelete }: CardProps) {
+  const { colors, stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const duration = formatDuration(clip.duration_seconds);
 
   if (clip.status === 'processing') {
@@ -169,7 +175,7 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
     );
   }
 
-  const stage = funnelStages[analysis.payload.funnelStage];
+  const stage = stages[analysis.payload.funnelStage];
   return (
     <Pressable
       style={[styles.card, { backgroundColor: stage?.color ?? colors.sky }]}
@@ -209,23 +215,27 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
 // ---------- empty state ----------
 
 function EmptyLibrary({
-  brandInitial,
+  brandName,
+  brandColor,
   onOpenBrandProfile,
   onAddVideos,
   onLoadSamples,
 }: {
-  brandInitial: string;
+  brandName?: string;
+  brandColor?: string;
   onOpenBrandProfile: () => void;
   onAddVideos: () => void;
   onLoadSamples: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const { width } = useWindowDimensions();
   const s = width / 402;
   return (
     <ScrollView contentContainerStyle={styles.emptyScroll} bounces={false}>
       <View style={[styles.emptyShape, { backgroundColor: colors.green, left: 322 * s, top: 70 * s, width: 124 * s, height: 116 * s }]} />
       <View style={[styles.emptyShape, { backgroundColor: colors.peach, left: -36 * s, top: 244 * s, width: 92 * s, height: 88 * s }]} />
-      <Header brandInitial={brandInitial} onOpenBrandProfile={onOpenBrandProfile} />
+      <Header brandName={brandName} brandColor={brandColor} onOpenBrandProfile={onOpenBrandProfile} />
       <Image
         source={require('../assets/mascots/hero.png')}
         style={{ width: 257 * s, height: 243 * s, alignSelf: 'center', marginTop: 4 }}
@@ -263,24 +273,24 @@ function EmptyLibrary({
 }
 
 function Header({
-  brandInitial,
+  brandName,
+  brandColor,
   onOpenBrandProfile,
 }: {
-  brandInitial: string;
+  brandName?: string;
+  brandColor?: string;
   onOpenBrandProfile: () => void;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.header}>
       <Text style={styles.wordmark}>LYREBIRD</Text>
-      <Pressable
+      <BrandMark
+        name={brandName}
+        color={brandColor}
         onPress={onOpenBrandProfile}
-        style={styles.avatar}
-        accessibilityRole="button"
         accessibilityLabel="Settings"
-        hitSlop={6}
-      >
-        {!!brandInitial && <Text style={styles.avatarText}>{brandInitial}</Text>}
-      </Pressable>
+      />
     </View>
   );
 }
@@ -294,6 +304,7 @@ export default function LibraryScreen({
   lastImportCount,
   now,
   brandName,
+  brandColor,
   focus,
   onSelectVideo,
   onOpenBrandProfile,
@@ -310,6 +321,8 @@ export default function LibraryScreen({
   /** Current time from the library hook; ticks while clips are analysing. */
   now: number;
   brandName?: string;
+  /** Background of the brand's initial in the header. */
+  brandColor?: string;
   /** The funnel stage the brand wants more of; sorted first by default. */
   focus?: FunnelStage;
   onSelectVideo: (clip: Clip) => void;
@@ -319,6 +332,8 @@ export default function LibraryScreen({
   onRetry: (clipId: string) => void;
   onDelete: (clipId: string) => void;
 }) {
+  const { colors, stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const [query, setQuery] = useState('');
   const [stageFilter, setStageFilter] = useState<StageFilter>('all');
   const [sort, setSort] = useState<SortKey>(focus ? 'focus' : 'newest');
@@ -326,7 +341,6 @@ export default function LibraryScreen({
   const tabBarSpace = useTabBarSpace();
   const { width } = useWindowDimensions();
 
-  const brandInitial = (brandName?.trim()[0] ?? '').toUpperCase();
   const columnWidth = (width - pagePadding * 2 - COLUMN_GAP) / 2;
   const blockHeight = (columnWidth - 18) * 1.25;
 
@@ -360,7 +374,8 @@ export default function LibraryScreen({
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <EmptyLibrary
-          brandInitial={brandInitial}
+          brandName={brandName}
+          brandColor={brandColor}
           onOpenBrandProfile={onOpenBrandProfile}
           onAddVideos={onAddVideos}
           onLoadSamples={onLoadSamples}
@@ -375,7 +390,7 @@ export default function LibraryScreen({
   visible.forEach((clip, i) => columns[i % 2].push(clip));
 
   const sortOptions: { key: SortKey; label: string }[] = [
-    ...(focus ? [{ key: 'focus' as const, label: `${funnelStages[focus].label} first` }] : []),
+    ...(focus ? [{ key: 'focus' as const, label: `${stages[focus].label} first` }] : []),
     { key: 'newest', label: 'Newest first' },
     { key: 'oldest', label: 'Oldest first' },
   ];
@@ -386,7 +401,7 @@ export default function LibraryScreen({
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarSpace + 24 }]}
         keyboardShouldPersistTaps="handled"
       >
-        <Header brandInitial={brandInitial} onOpenBrandProfile={onOpenBrandProfile} />
+        <Header brandName={brandName} brandColor={brandColor} onOpenBrandProfile={onOpenBrandProfile} />
 
         <View style={{ gap: 8 }}>
           <Text style={styles.title}>
@@ -458,9 +473,9 @@ export default function LibraryScreen({
                 accessibilityState={{ selected: active }}
                 style={[styles.chip, styles.stageChip, active && styles.chipActive]}
               >
-                <View style={[styles.chipDot, { backgroundColor: funnelStages[stage].color }]} />
+                <View style={[styles.chipDot, { backgroundColor: stages[stage].color }]} />
                 <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                  {funnelStages[stage].label}
+                  {stages[stage].label}
                 </Text>
               </Pressable>
             );
@@ -520,10 +535,10 @@ export default function LibraryScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -542,19 +557,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.54,
     color: colors.textEyebrow,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    backgroundColor: colors.track,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontFamily: fonts.heading,
-    fontSize: 13,
-    color: colors.ink,
   },
   title: {
     fontFamily: fonts.display,
@@ -592,8 +594,8 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 18,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    shadowColor: colors.ink,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 5,
@@ -610,10 +612,10 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 5,
@@ -635,18 +637,18 @@ const styles = StyleSheet.create({
     height: 30,
     borderRadius: radius.pill,
     borderWidth: 2.4,
-    borderColor: colors.ink,
+    borderColor: colors.onPastel,
     borderTopColor: 'transparent',
   },
   bannerTitle: {
     fontFamily: fonts.bodyBold,
     fontSize: 13.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   bannerSub: {
     fontFamily: fonts.body,
     fontSize: 11.5,
-    color: colors.textMuted,
+    color: colors.onPastelBody,
   },
 
   // funnel chips
@@ -662,7 +664,7 @@ const styles = StyleSheet.create({
     height: 31,
     paddingHorizontal: 15,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -686,7 +688,7 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     fontFamily: fonts.bodySemiBold,
-    color: colors.white,
+    color: colors.cream,
   },
 
   // cards
@@ -704,7 +706,7 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   cardPlain: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 0.8,
     borderColor: colors.hairline,
   },
@@ -717,7 +719,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.frost,
     alignItems: 'center',
     justifyContent: 'center',
     paddingLeft: 3,
@@ -730,7 +732,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 10.4,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
-    borderLeftColor: colors.ink,
+    borderLeftColor: colors.onPastel,
   },
   duration: {
     position: 'absolute',
@@ -744,7 +746,7 @@ const styles = StyleSheet.create({
   durationText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 9.5,
-    color: colors.white,
+    color: colors.onScrim,
   },
   cardFooter: {
     paddingHorizontal: 2,
@@ -756,7 +758,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 16.6,
     letterSpacing: -0.2,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   pillRow: {
     flexDirection: 'row',
@@ -772,23 +774,23 @@ const styles = StyleSheet.create({
   framePillText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 9,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   inkPill: {
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: radius.pill,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.onPastel,
   },
   inkPillText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 9,
-    color: colors.white,
+    color: colors.onPastelInverse,
   },
   saved: {
     fontFamily: fonts.body,
     fontSize: 9.5,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
   analysingText: {
     fontFamily: fonts.body,
@@ -911,7 +913,7 @@ const styles = StyleSheet.create({
   stepNumberText: {
     fontFamily: fonts.heading,
     fontSize: 13,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   stepText: {
     flex: 1,
@@ -926,7 +928,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   ctaShadow: {
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.22,
     shadowRadius: 7,
@@ -940,7 +942,7 @@ const styles = StyleSheet.create({
   },
 });
 
-const icon = StyleSheet.create({
+const makeIconStyles = (colors: Colors) => StyleSheet.create({
   search: {
     width: 17,
     height: 17,

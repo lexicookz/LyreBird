@@ -16,9 +16,9 @@ import {
   type GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BackButton, Chip, Eyebrow } from '../components/ui';
-import { BrandSetup, TONES, emptyBrandSetup } from '../data/brandSetup';
-import { colors, fonts, FUNNEL_ORDER, funnelStages, pagePadding, radius } from '../theme';
+import { BackButton, BrandMark, Chip, Eyebrow } from '../components/ui';
+import { BRAND_COLORS, BrandSetup, TONES, brandColorOf, emptyBrandSetup } from '../data/brandSetup';
+import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 
 const FUNNEL_NOTES = {
   TOFU: 'Briefs will lean top-of-funnel until this shifts.',
@@ -36,6 +36,8 @@ export default function BrandProfileScreen({
   onSave: (setup: BrandSetup) => void;
   onBack: () => void;
 }) {
+  const { colors, stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const [draft, setDraft] = useState<BrandSetup>(setup ?? emptyBrandSetup);
   const [addingTone, setAddingTone] = useState(false);
   const [avoidDraft, setAvoidDraft] = useState('');
@@ -43,7 +45,6 @@ export default function BrandProfileScreen({
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(setup ?? emptyBrandSetup);
   const canSave = dirty && draft.name.trim().length > 0;
-  const initial = (draft.name.trim()[0] ?? '').toUpperCase();
 
   function update(patch: Partial<BrandSetup>) {
     setDraft((d) => ({ ...d, ...patch }));
@@ -66,6 +67,11 @@ export default function BrandProfileScreen({
     const term = avoidDraft.trim();
     if (term && !draft.avoid.includes(term)) update({ avoid: [...draft.avoid, term] });
     setAvoidDraft('');
+  }
+
+  function cycleColor() {
+    const current = BRAND_COLORS.indexOf(brandColorOf(draft));
+    update({ color: BRAND_COLORS[(current + 1) % BRAND_COLORS.length] });
   }
 
   function cycleFocus() {
@@ -100,9 +106,14 @@ export default function BrandProfileScreen({
           </View>
 
           <View style={styles.identity}>
-            <View style={styles.tile}>
-              <Text style={styles.tileText}>{initial || '?'}</Text>
-            </View>
+            <BrandMark
+              name={draft.name}
+              color={colors[brandColorOf(draft)]}
+              size={58}
+              shape="square"
+              onPress={cycleColor}
+              accessibilityLabel={`Brand colour, ${brandColorOf(draft)}. Tap to change.`}
+            />
             <View style={{ flex: 1, gap: 2 }}>
               <TextInput
                 value={draft.name}
@@ -112,33 +123,33 @@ export default function BrandProfileScreen({
                 accessibilityLabel="Brand name"
                 style={styles.nameInput}
               />
-              <Text style={styles.hint}>Tap anything below to change it.</Text>
+              <Text style={styles.hint}>Tap the square for a new colour, or anything below to edit.</Text>
             </View>
           </View>
 
           <Eyebrow>Every brief is written against this</Eyebrow>
 
           <View style={[styles.card, { backgroundColor: colors.lilac }]}>
-            <Eyebrow color={colors.textBody}>What we sell</Eyebrow>
+            <Eyebrow color={colors.onPastelBody}>What we sell</Eyebrow>
             <TextInput
               value={draft.product_summary}
               onChangeText={(product_summary) => update({ product_summary })}
               multiline
               placeholder="What do you sell? A sentence is plenty."
-              placeholderTextColor={colors.textBody}
+              placeholderTextColor={colors.onPastelBody}
               accessibilityLabel="What we sell"
               style={styles.bodyInput}
             />
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.green }]}>
-            <Eyebrow color={colors.textBody}>Who it's for</Eyebrow>
+            <Eyebrow color={colors.onPastelBody}>Who it's for</Eyebrow>
             <TextInput
               value={draft.target_audience}
               onChangeText={(target_audience) => update({ target_audience })}
               multiline
               placeholder="Who are you trying to reach?"
-              placeholderTextColor={colors.textBody}
+              placeholderTextColor={colors.onPastelBody}
               accessibilityLabel="Who it's for"
               style={styles.bodyInput}
             />
@@ -213,14 +224,14 @@ export default function BrandProfileScreen({
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.peach }]}>
-            <Eyebrow color={colors.textBody}>This quarter we need</Eyebrow>
+            <Eyebrow color={colors.onPastelBody}>This quarter we need</Eyebrow>
             <View style={styles.focusRow}>
               <Pressable
                 onPress={cycleFocus}
                 accessibilityRole="button"
-                accessibilityLabel={`Focus, ${funnelStages[draft.focus].label}. Tap to change.`}
+                accessibilityLabel={`Focus, ${stages[draft.focus].label}. Tap to change.`}
               >
-                <Text style={styles.focusLabel}>{funnelStages[draft.focus].label} ›</Text>
+                <Text style={styles.focusLabel}>{stages[draft.focus].label} ›</Text>
               </Pressable>
               <Text style={styles.focusValue}>{draft.focusShare}%</Text>
             </View>
@@ -239,7 +250,7 @@ export default function BrandProfileScreen({
             >
               <View style={[styles.trackFill, { width: `${draft.focusShare}%` }]} />
             </Pressable>
-            <Text style={styles.small}>{FUNNEL_NOTES[draft.focus]}</Text>
+            <Text style={styles.pastelSmall}>{FUNNEL_NOTES[draft.focus]}</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -247,10 +258,10 @@ export default function BrandProfileScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -273,19 +284,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
   },
-  tile: {
-    width: 58,
-    height: 58,
-    borderRadius: radius.card,
-    backgroundColor: colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tileText: {
-    fontFamily: fonts.heading,
-    fontSize: 20,
-    color: colors.ink,
-  },
   nameInput: {
     fontFamily: fonts.display,
     fontSize: 25,
@@ -305,8 +303,8 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   plainCard: {
-    backgroundColor: colors.white,
-    shadowColor: colors.ink,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
@@ -316,7 +314,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 20,
-    color: colors.ink,
+    color: colors.onPastel,
     padding: 0,
     textAlignVertical: 'top',
   },
@@ -330,7 +328,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: radius.pill,
     borderWidth: 0.8,
-    borderColor: 'rgba(51,36,28,0.16)',
+    borderColor: colors.hairline,
   },
   addChipText: {
     fontFamily: fonts.body,
@@ -342,6 +340,11 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: colors.textBody,
   },
+  pastelSmall: {
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.onPastelBody,
+  },
   avoidRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -350,7 +353,7 @@ const styles = StyleSheet.create({
   dash: {
     width: 12,
     height: 1.6,
-    backgroundColor: '#c0645a',
+    backgroundColor: colors.danger,
   },
   avoidText: {
     flex: 1,
@@ -369,7 +372,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     paddingVertical: 6,
     borderTopWidth: StyleSheet.hairlineWidth * 2,
-    borderTopColor: 'rgba(51,36,28,0.07)',
+    borderTopColor: colors.divider,
   },
   focusRow: {
     flexDirection: 'row',
@@ -379,22 +382,22 @@ const styles = StyleSheet.create({
   focusLabel: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 13.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   focusValue: {
     fontFamily: fonts.heading,
     fontSize: 15,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   track: {
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: colors.frost,
     overflow: 'hidden',
   },
   trackFill: {
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.onPastel,
   },
 });

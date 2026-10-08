@@ -10,7 +10,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { colors, fonts, radius } from '../theme';
+import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
 
 /** Full-width dark button ("Continue", "Finish setup"). */
 export function PrimaryButton({
@@ -24,6 +24,7 @@ export function PrimaryButton({
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -44,6 +45,7 @@ export function PrimaryButton({
 
 /** Round grey back button with a chevron. */
 export function BackButton({ onPress }: { onPress: () => void }) {
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -60,12 +62,14 @@ export function BackButton({ onPress }: { onPress: () => void }) {
 /** Small uppercase label above a field or section ("BRAND NAME"). */
 export function Eyebrow({
   children,
-  color = colors.textLabel,
+  color,
 }: {
   children: string;
   color?: string;
 }) {
-  return <Text style={[styles.eyebrow, { color }]}>{children}</Text>;
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
+  return <Text style={[styles.eyebrow, { color: color ?? colors.textLabel }]}>{children}</Text>;
 }
 
 /** Rounded pill. Selected chips go green and semibold. */
@@ -78,6 +82,7 @@ export function Chip({
   selected?: boolean;
   onPress?: () => void;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -92,8 +97,59 @@ export function Chip({
   );
 }
 
+/**
+ * The brand's initial on its colour. A circle in screen headers (it opens
+ * Settings); a rounded square on Settings and Branding. Grey and empty when
+ * there's no brand name yet.
+ */
+export function BrandMark({
+  name,
+  color,
+  size = 34,
+  shape = 'circle',
+  onPress,
+  accessibilityLabel,
+}: {
+  name?: string;
+  /** A hex colour, e.g. from colors[brandColorOf(setup)]. */
+  color?: string;
+  size?: number;
+  shape?: 'circle' | 'square';
+  onPress?: () => void;
+  accessibilityLabel?: string;
+}) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
+  const initial = (name?.trim()[0] ?? '').toUpperCase();
+  const style = [
+    styles.mark,
+    {
+      width: size,
+      height: size,
+      borderRadius: shape === 'circle' ? radius.pill : radius.card,
+      backgroundColor: initial && color ? color : colors.track,
+    },
+  ];
+  const letter = !!initial && (
+    <Text style={[styles.markText, { fontSize: Math.round(size * 0.4) }]}>{initial}</Text>
+  );
+  if (!onPress) return <View style={style}>{letter}</View>;
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [style, pressed && styles.pressed]}
+    >
+      {letter}
+    </Pressable>
+  );
+}
+
 /** Segmented progress bar: `current` of `total` segments filled. */
 export function StepProgress({ current, total }: { current: number; total: number }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.progress} accessibilityLabel={`Step ${current} of ${total}`}>
       {Array.from({ length: total }, (_, i) => (
@@ -106,7 +162,7 @@ export function StepProgress({ current, total }: { current: number; total: numbe
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   pressed: {
     opacity: 0.85,
   },
@@ -164,7 +220,15 @@ const styles = StyleSheet.create({
   },
   chipLabelSelected: {
     fontFamily: fonts.bodySemiBold,
-    color: colors.ink,
+    color: colors.onPastel,
+  },
+  mark: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markText: {
+    fontFamily: fonts.heading,
+    color: colors.onPastel,
   },
   progress: {
     flexDirection: 'row',

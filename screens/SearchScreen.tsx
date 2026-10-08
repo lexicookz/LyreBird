@@ -5,7 +5,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { shotsOf } from '../data/briefs';
-import { colors, fonts, funnelStages, pagePadding, radius } from '../theme';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Brief, Clip, FunnelStage, TypedAnalysis } from '../types';
 
 function matches(q: string, texts: (string | null | undefined)[]) {
@@ -27,6 +27,8 @@ export default function SearchScreen({
   onSelectClip: (clip: Clip) => void;
   onSelectBrief: (brief: Brief) => void;
 }) {
+  const { colors, stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
 
@@ -85,7 +87,7 @@ export default function SearchScreen({
                 <Text style={styles.sectionLabel}>VIDEOS · {clipResults.length}</Text>
                 {clipResults.map((clip) => {
                   const p = analysisByClip.get(clip.id)?.payload;
-                  const stage = p ? funnelStages[p.funnelStage] : undefined;
+                  const stage = p ? stages[p.funnelStage] : undefined;
                   return (
                     <Pressable
                       key={clip.id}
@@ -113,7 +115,7 @@ export default function SearchScreen({
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>BRIEFS · {briefResults.length}</Text>
                 {briefResults.map((brief) => {
-                  const stage = funnelStages[stageOf(brief)];
+                  const stage = stages[stageOf(brief)];
                   return (
                     <Pressable
                       key={brief.id}
@@ -121,8 +123,8 @@ export default function SearchScreen({
                       accessibilityRole="button"
                       style={[styles.briefCard, { backgroundColor: stage.color }]}
                     >
-                      <Text style={styles.resultTitle}>“{brief.hook ?? 'Untitled brief'}”</Text>
-                      <Text style={styles.resultMeta}>
+                      <Text style={styles.briefTitle}>“{brief.hook ?? 'Untitled brief'}”</Text>
+                      <Text style={styles.briefMeta}>
                         {stage.label} · {shotsOf(brief).length} shots
                       </Text>
                     </Pressable>
@@ -137,10 +139,10 @@ export default function SearchScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -169,8 +171,8 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 18,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    shadowColor: colors.ink,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 5,
@@ -248,6 +250,17 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 11.5,
     color: colors.textBody,
+  },
+  briefTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 14,
+    lineHeight: 18,
+    color: colors.onPastel,
+  },
+  briefMeta: {
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.onPastelBody,
   },
   briefCard: {
     borderRadius: radius.card,

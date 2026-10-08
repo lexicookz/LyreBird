@@ -17,7 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton, Chip, Eyebrow, PrimaryButton, StepProgress } from '../components/ui';
 import { BrandSetup, TONES, emptyBrandSetup } from '../data/brandSetup';
-import { colors, fonts, funnelStages, FUNNEL_ORDER, pagePadding, radius } from '../theme';
+import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { FunnelStage } from '../types';
 
 const TOTAL_STEPS = 4;
@@ -68,6 +68,8 @@ function Field({
   multiline?: boolean;
   minHeight?: number;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.field}>
       <Eyebrow>{label}</Eyebrow>
@@ -94,6 +96,8 @@ function StepWhatYouSell({
   setup: BrandSetup;
   update: (patch: Partial<BrandSetup>) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   return (
     <>
       <Field
@@ -138,6 +142,8 @@ function StepSound({
   setup: BrandSetup;
   update: (patch: Partial<BrandSetup>) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   function toggle(tone: string) {
     update({
       tones: setup.tones.includes(tone)
@@ -161,7 +167,7 @@ function StepSound({
         ))}
       </View>
       <View style={[styles.note, { backgroundColor: colors.lilac, gap: 6 }]}>
-        <Eyebrow color={colors.textBody}>So a hook becomes</Eyebrow>
+        <Eyebrow color={colors.onPastelBody}>So a hook becomes</Eyebrow>
         <Text style={styles.previewHook}>
           {latest ? TONE_HOOKS[latest] : 'Pick a tone to see an example.'}
         </Text>
@@ -178,6 +184,8 @@ function StepAvoid({
   setup: BrandSetup;
   update: (patch: Partial<BrandSetup>) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const [draft, setDraft] = useState('');
 
   function add(term: string) {
@@ -262,6 +270,8 @@ function StepFocus({
   setup: BrandSetup;
   update: (patch: Partial<BrandSetup>) => void;
 }) {
+  const { colors, stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const [trackWidth, setTrackWidth] = useState(0);
 
   function setShare(share: number) {
@@ -283,14 +293,14 @@ function StepFocus({
               onPress={() => update({ focus: stage })}
               accessibilityRole="radio"
               accessibilityState={{ selected }}
-              style={[styles.option, selected && { backgroundColor: funnelStages[stage].color }]}
+              style={[styles.option, selected && { backgroundColor: stages[stage].color }]}
             >
               <View style={[styles.radio, selected && styles.radioOn]}>
                 {selected && <View style={styles.tick} />}
               </View>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.optionTitle}>{funnelStages[stage].label}</Text>
-                <Text style={[styles.optionBody, selected && { color: colors.textBody }]}>
+                <Text style={[styles.optionTitle, selected && { color: colors.onPastel }]}>{stages[stage].label}</Text>
+                <Text style={[styles.optionBody, selected && { color: colors.onPastelBody }]}>
                   {FOCUS_DESCRIPTIONS[stage]}
                 </Text>
               </View>
@@ -322,7 +332,7 @@ function StepFocus({
       </View>
 
       <View style={[styles.note, { backgroundColor: colors.lilac, gap: 5 }]}>
-        <Eyebrow color={colors.textBody}>So you will see</Eyebrow>
+        <Eyebrow color={colors.onPastelBody}>So you will see</Eyebrow>
         <Text style={styles.outcome}>{FOCUS_OUTCOMES[setup.focus]}</Text>
       </View>
     </>
@@ -349,6 +359,7 @@ export default function BrandSetupScreen({
   /** Finished or skipped. `null` if there's nothing worth saving (no brand name). */
   onDone: (setup: BrandSetup | null) => void;
 }) {
+  const styles = useStyles(makeStyles);
   const [step, setStep] = useState(1);
   const [setup, setSetup] = useState<BrandSetup>(initial ?? emptyBrandSetup);
 
@@ -415,10 +426,10 @@ export default function BrandSetupScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   content: {
     paddingHorizontal: pagePadding,
@@ -496,13 +507,13 @@ const styles = StyleSheet.create({
   noteIconText: {
     fontFamily: fonts.heading,
     fontSize: 12,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   noteText: {
     fontFamily: fonts.body,
     fontSize: 11.5,
     lineHeight: 16.7,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
 
   // step 2
@@ -515,12 +526,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.heading,
     fontSize: 14.5,
     lineHeight: 18.85,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   previewHint: {
     fontFamily: fonts.body,
     fontSize: 11,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
 
   // step 3
@@ -561,7 +572,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.field,
     borderWidth: 0.8,
     borderStyle: 'dashed',
-    borderColor: 'rgba(51,36,28,0.24)',
+    borderColor: colors.hairlineStrong,
     fontFamily: fonts.body,
     fontSize: 14,
     color: colors.ink,
@@ -571,8 +582,8 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: radius.pill,
     borderWidth: 0.8,
-    borderColor: 'rgba(51,36,28,0.14)',
-    backgroundColor: colors.white,
+    borderColor: colors.hairline,
+    backgroundColor: colors.surface,
   },
   suggestionText: {
     fontFamily: fonts.body,
@@ -595,7 +606,7 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: radius.pill,
     borderWidth: 1.6,
-    borderColor: 'rgba(51,36,28,0.24)',
+    borderColor: colors.hairlineStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -647,6 +658,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12.5,
     lineHeight: 18.1,
-    color: colors.ink,
+    color: colors.onPastel,
   },
 });

@@ -4,7 +4,7 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, pagePadding } from '../theme';
+import { pagePadding, Colors, useStyles } from '../theme';
 
 export default function BottomSheet({
   visible,
@@ -15,6 +15,7 @@ export default function BottomSheet({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -33,14 +34,14 @@ export default function BottomSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   root: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(51,36,28,0.3)',
+    backgroundColor: colors.overlay,
   },
   sheet: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: pagePadding,
@@ -51,7 +52,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 5,
     borderRadius: 999,
-    backgroundColor: 'rgba(51,36,28,0.16)',
+    backgroundColor: colors.hairline,
     marginBottom: 18,
   },
 });
