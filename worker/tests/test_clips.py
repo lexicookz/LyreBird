@@ -38,6 +38,165 @@ class FakeClient:
         assert name == "clips"
         return FakeQuery(self.rows)
 
+class MissingFileBucket:
+    def download(self, path):
+        raise RuntimeError("object not found")
+
+
+class MissingFileStorage:
+    def from_(self, bucket):
+        assert bucket == clips.CLIPS_BUCKET
+        return MissingFileBucket()
+
+
+class MissingFileClient(FakeClient):
+    def __init__(self, rows):
+        super().__init__(rows)
+        self.storage = MissingFileStorage()
+
+class DownloadBucket:
+    def download(self, path):
+        return b"fake video bytes"
+
+
+class DownloadStorage:
+    def from_(self, bucket):
+        assert bucket == clips.CLIPS_BUCKET
+        return DownloadBucket()
+
+
+class TrackingQuery:
+    def __init__(self, fake_client):
+        self.fake_client = fake_client
+        self.update_data = None
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def update(self, data):
+        self.update_data = data
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        if self.update_data is not None:
+            self.fake_client.updates.append(self.update_data)
+            return SimpleNamespace(data=[self.update_data])
+
+        return SimpleNamespace(data=self.fake_client.rows)
+
+
+class TrackingClient:
+    def __init__(self, rows):
+        self.rows = rows
+        self.updates = []
+        self.storage = DownloadStorage()
+
+    def table(self, name):
+        assert name == "clips"
+        return TrackingQuery(self)
+
+class SuccessfulBucket:
+    def download(self, path):
+        return b"original video"
+
+    def upload(self, **_kwargs):
+        return None
+
+
+class SuccessfulStorage:
+    def from_(self, bucket):
+        assert bucket in {
+            clips.CLIPS_BUCKET,
+            clips.THUMBNAILS_BUCKET,
+        }
+        return SuccessfulBucket()
+
+
+class UpdateFailureQuery:
+    def __init__(self, rows):
+        self.rows = rows
+        self.is_update = False
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def update(self, _data):
+        self.is_update = True
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        if self.is_update:
+            return SimpleNamespace(data=[])
+
+        return SimpleNamespace(data=self.rows)
+
+
+class UpdateFailureClient:
+    def __init__(self, rows):
+        self.rows = rows
+        self.storage = SuccessfulStorage()
+
+    def table(self, name):
+        assert name == "clips"
+        return UpdateFailureQuery(self.rows)
+
+class DeleteFailureBucket:
+    def download(self, path):
+        return b"original video"
+
+    def upload(self, **_kwargs):
+        return None
+
+    def remove(self, _paths):
+        raise RuntimeError("delete failed")
+
+
+class DeleteFailureStorage:
+    def from_(self, bucket):
+        assert bucket in {
+            clips.CLIPS_BUCKET,
+            clips.THUMBNAILS_BUCKET,
+        }
+        return DeleteFailureBucket()
+
+
+class SuccessfulUpdateQuery:
+    def __init__(self, rows):
+        self.rows = rows
+        self.update_data = None
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def update(self, data):
+        self.update_data = data
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        if self.update_data is not None:
+            return SimpleNamespace(data=[self.update_data])
+
+        return SimpleNamespace(data=self.rows)
+
+
+class DeleteFailureClient:
+    def __init__(self, rows):
+        self.rows = rows
+        self.storage = DeleteFailureStorage()
+
+    def table(self, name):
+        assert name == "clips"
+        return SuccessfulUpdateQuery(self.rows)
+
 
 def clip_row(**overrides):
     row = {
@@ -114,3 +273,88 @@ def test_prepare_returns_existing_result_when_already_prepared(monkeypatch):
         "original_deleted": False,
         "already_prepared": True,
     }
+
+def test_prepare_returns_404_when_source_file_cannot_be_downloaded(monkeypatch):
+    row = clip_row()
+    monkeypatch.setattr(
+        clips,
+        "get_client",
+        lambda: MissingFileClient([row]),
+    )
+
+    response = client.post(f"/clips/{CLIP_ID}/prepare")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": (
+            f"could not download '{OWNER_ID}/original.mp4' "
+            "from clips: object not found"
+        ),
+    }
+
+def test_prepare_returns_422_and_marks_clip_failed_when_media_processing_fails(
+    monkeypatch,
+):
+    fake_client = TrackingClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+
+    def fail_downscale(_source, _destination):
+        raise clips.MediaError("ffmpeg failed")
+
+    monkeypatch.setattr(clips, "downscale_to_480p", fail_downscale)
+
+    response = client.post(f"/clips/{CLIP_ID}/prepare")
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "ffmpeg failed",
+    }
+    assert fake_client.updates == [
+        {"status": "failed"},
+    ]
+
+def test_prepare_returns_500_when_clip_row_cannot_be_updated(monkeypatch):
+    fake_client = UpdateFailureClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+
+    def fake_downscale(_source, destination):
+        destination.write_bytes(b"prepared video")
+
+    def fake_thumbnail(_source, destination):
+        destination.write_bytes(b"thumbnail")
+
+    monkeypatch.setattr(clips, "downscale_to_480p", fake_downscale)
+    monkeypatch.setattr(clips, "extract_thumbnail", fake_thumbnail)
+    monkeypatch.setattr(clips, "probe_duration_seconds", lambda _source: 12.5)
+
+    response = client.post(f"/clips/{CLIP_ID}/prepare")
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": "uploaded the prepared files but could not update the clip row",
+    }
+
+def test_prepare_succeeds_when_original_file_cannot_be_deleted(monkeypatch):
+    fake_client = DeleteFailureClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+
+    def fake_downscale(_source, destination):
+        destination.write_bytes(b"prepared video")
+
+    def fake_thumbnail(_source, destination):
+        destination.write_bytes(b"thumbnail")
+
+    monkeypatch.setattr(clips, "downscale_to_480p", fake_downscale)
+    monkeypatch.setattr(clips, "extract_thumbnail", fake_thumbnail)
+    monkeypatch.setattr(clips, "probe_duration_seconds", lambda _source: 12.5)
+
+    response = client.post(f"/clips/{CLIP_ID}/prepare")
+
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["storage_path"] == f"{OWNER_ID}/original-480p.mp4"
+    assert body["thumbnail_path"] == f"{OWNER_ID}/original-thumb.jpg"
+    assert body["duration_seconds"] == 12.5
+    assert body["original_deleted"] is False
+    assert body["already_prepared"] is False
