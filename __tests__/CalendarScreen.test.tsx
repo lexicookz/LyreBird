@@ -2,13 +2,13 @@ import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import CalendarScreen from '../screens/CalendarScreen';
 import { mockBriefs, mockClips } from '../data/mockVideos';
-import { MONTHS, sampleCalendar, startOfWeek, suggestDate, toISODate, addDays } from '../data/calendar';
+import { MONTHS, sampleCalendar, startOfWeek, suggestDate, toISODate, addDays, type CalendarItem, } from '../data/calendar';
 
-async function renderCalendar() {
+async function renderCalendar(items = sampleCalendar()) {
   const onEditEntry = jest.fn();
   const screen = await render(
     <CalendarScreen
-      items={sampleCalendar()}
+      items={items}
       briefs={mockBriefs}
       clipFor={(id) => mockClips.find((c) => c.id === id)}
       brandName="Nima Studio"
@@ -76,6 +76,51 @@ describe('CalendarScreen', () => {
     await fireEvent.press(getByLabelText(/^Jan,/));
     expect(getByText('January')).toBeTruthy();
   });
+
+  it('shows an empty state when nothing is scheduled', async () => {
+  const { getByText, queryByText } = await renderCalendar([]);
+
+    expect(
+      getByText(
+        /Nothing planned .*Open a brief and tap Schedule to plan it here\./
+      )
+    ).toBeTruthy();
+
+    expect(
+      queryByText(/I used to hit snooze 5 times/)
+    ).toBeNull();
+  });
+
+  it('shows multiple briefs scheduled on the same day', async () => {
+    const sameDay = toISODate(addDays(startOfWeek(new Date()), 1));
+
+    const items: CalendarItem[] = [
+      {
+        briefId: mockBriefs[0].id,
+        date: sameDay,
+        stage: 'TOFU',
+        status: 'planned',
+      },
+      {
+        briefId: mockBriefs[1].id,
+        date: sameDay,
+        stage: 'MOFU',
+        status: 'filmed',
+      },
+    ];
+
+    const { getByText, onEditEntry } = await renderCalendar(items);
+
+    expect(getByText('Two to film\nthis week')).toBeTruthy();
+    expect(getByText('Planned')).toBeTruthy();
+    expect(getByText('Filmed')).toBeTruthy();
+
+    fireEvent.press(getByText('Planned'));
+    fireEvent.press(getByText('Filmed'));
+
+    expect(onEditEntry).toHaveBeenNthCalledWith(1, mockBriefs[0].id);
+    expect(onEditEntry).toHaveBeenNthCalledWith(2, mockBriefs[1].id);
+  });
 });
 
 describe('calendar data', () => {
@@ -91,5 +136,13 @@ describe('calendar data', () => {
       { briefId: 'b', date: toISODate(addDays(today, 2)), stage: 'TOFU' as const, status: 'planned' as const },
     ];
     expect(suggestDate(items, today)).toBe('2026-10-04');
+  });
+
+  it('handles navigation across December and January', () => {
+    const december31 = new Date(2026, 11, 31);
+    const january1 = new Date(2027, 0, 1);
+
+    expect(toISODate(addDays(december31, 1))).toBe('2027-01-01');
+    expect(toISODate(addDays(january1, -1))).toBe('2026-12-31');
   });
 });
