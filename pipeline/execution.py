@@ -34,7 +34,7 @@ def get_client():
     print(f"Using key #{API_KEYS.index(api_key) + 1}")
     return genai.Client(api_key=api_key)
 
-def roulette(client, contents, config, model="gemini-3.6-flash", max_attempts=1):
+def roulette(client, contents, config, model="gemini-3.8-flash", max_attempts=1):
     last_error = None
 
     for attempt in range(max_attempts):

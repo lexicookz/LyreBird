@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomSheet from '../components/BottomSheet';
 import { BrandMark, PrimaryButton } from '../components/ui';
 import { useTabBarSpace } from '../components/BottomTabBar';
-import { analysisProgress } from '../data/library';
+
 import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FunnelStage, TypedAnalysis } from '../types';
 
@@ -131,7 +131,6 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
   const duration = formatDuration(clip.duration_seconds);
 
   if (clip.status === 'processing') {
-    const progress = analysisProgress(clip, now);
     return (
       <Pressable
         style={[styles.card, styles.cardPlain]}
@@ -142,7 +141,7 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
         <View style={styles.cardFooter}>
           <Text style={styles.analysingText}>Analysing…</Text>
           <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${Math.max(6, progress * 100)}%` }]} />
+      
           </View>
         </View>
       </Pressable>

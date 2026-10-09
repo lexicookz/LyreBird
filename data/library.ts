@@ -26,7 +26,7 @@ const STORAGE_KEY = 'lyrebird.library';
 const OWNER_ID = mockClips[0]?.owner_id ?? 'local';
 
 /** How long a simulated analysis takes. */
-export const ANALYSIS_MS = 6000;
+
 /** Clips longer than this are skipped at import. */
 export const MAX_CLIP_SECONDS = 90;
 
@@ -110,6 +110,7 @@ export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): C
     return {
       id: newId(),
       owner_id: OWNER_ID,
+      local_uri: asset.uri,
       recording_id: null,
       // Not uploaded yet: there is no bucket path until the upload step exists.
       storage_path: `local/${asset.fileName ?? name}`,
@@ -125,25 +126,67 @@ export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): C
     };
   });
 }
+type UploadVideoInput = {
+  uri: string;
+  fileName: string;
+};
 
-/** Simulated analysis result for a clip (see the note at the top). */
-export function finishAnalysis(clip: Clip, index: number): TypedAnalysis {
-  const payload = SAMPLE_PAYLOADS[index % SAMPLE_PAYLOADS.length];
-  return {
-    id: newId(),
-    owner_id: clip.owner_id,
-    clip_id: clip.id,
-    payload,
-    model_version: 'simulated',
-    prompt_version: 'simulated',
-    created_at: new Date().toISOString(),
-  };
+export async function uploadToAnalyze(
+  video: UploadVideoInput
+): Promise<AnalysisPayload> {
+  const formData = new FormData();
+  
+  console.log('VIDEO INPUT', video);
+  console.log('URI', video.uri);
+  console.log('FILENAME', video.fileName);
+  console.log('upload video', video);
+  formData.append('file', {
+    uri: video.uri,
+    name: video.fileName,
+    type: 'video/mp4',
+  } as any);
+
+  console.log('UPLOAD', video.uri); //to be removed
+  console.log(JSON.stringify(video, null, 2)); //to be removed
+
+  const response = await fetch('http://192.168.1.18:8000/analyze-video',
+    { method: 'POST',
+      body: formData,});
+  if (!response.ok) {
+    throw new Error(
+      `Failed to upload video: ${response.status} ${response.statusText}`
+    );
+  }
+  const result = await response.json();
+  return result;
 }
 
-/** 0-1 progress of a processing clip's simulated analysis. */
-export function analysisProgress(clip: Clip, now = Date.now()) {
-  const started = Date.parse(clip.updated_at);
-  return Math.min(1, Math.max(0, (now - started) / ANALYSIS_MS));
+export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: number): Promise<TypedAnalysis> {
+  console.log('asset', asset);
+  console.log('CALLING BACKEND', clip.id); // to be removed
+  try {
+    const payload = await uploadToAnalyze({
+      uri: (clip as any).local_uri,
+      fileName: `${clip.id}.mp4`,
+    } );
+
+    return {
+      id: newId(),
+      owner_id: clip.owner_id,
+      clip_id: clip.id,
+      payload,
+      model_version: 'gemini-3.8-flash',
+      prompt_version: 'v1',
+      created_at: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error(
+      `Analysis failed for clip ${clip.id}:`,
+      error
+    );
+
+    throw error;
+  }
 }
 
 // ---------- hook ----------
@@ -153,13 +196,7 @@ export function useLibrary() {
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
   const completed = useRef(0);
-
-  useEffect(() => {
-    loadLibrary().then((stored) => {
-      setState(stored);
-      setLoaded(true);
-    });
-  }, []);
+  const assetMap = useRef<Record<string, ImagePickerAsset>>({});
 
   const update = useCallback((fn: (s: LibraryState) => LibraryState) => {
     setState((current) => {
@@ -169,41 +206,78 @@ export function useLibrary() {
     });
   }, []);
 
-  const processing = state.clips.filter((c) => c.status === 'processing');
+  const runAnalysis = useCallback( 
+    async (clip: Clip) => {
+      console.log('RUN ANALYSIS START', clip.id); //to be removed
+    const asset = assetMap.current[clip.id];
+    if (!asset) {return;}
+    try {
+      const analysis = await finishAnalysis(clip, asset, completed.current++);
 
-  // While anything is analysing, tick so progress bars move, and finish clips
-  // whose time is up.
-  useEffect(() => {
-    if (!loaded || processing.length === 0) return;
-    const timer = setInterval(() => {
-      const t = Date.now();
-      setNow(t);
-      const due = processing.filter((c) => analysisProgress(c, t) >= 1);
-      if (due.length === 0) return;
-      update((s) => {
-        const dueIds = new Set(due.map((c) => c.id));
-        const newAnalyses = due.map((c) => finishAnalysis(c, completed.current++));
-        return {
-          ...s,
-          clips: s.clips.map((c) =>
-            dueIds.has(c.id)
-              ? { ...c, status: 'ready', updated_at: new Date(t).toISOString() }
-              : c
+      update((s) => ({
+        ...s,
+        clips: s.clips.map((c) =>
+          c.id === clip.id
+            ? {
+                ...c,
+                status: 'ready',
+                updated_at: new Date().toISOString(),
+              }
+            : c
+        ),
+        analyses: [
+          ...s.analyses.filter(
+            (a) => a.clip_id !== clip.id
           ),
-          analyses: [...s.analyses.filter((a) => !dueIds.has(a.clip_id)), ...newAnalyses],
-        };
-      });
-    }, 250);
-    return () => clearInterval(timer);
-  }, [loaded, processing.map((c) => c.id).join(','), update]);
+          analysis,
+        ],
+      }));
+    } catch {
+       update((s) => ({
+        ...s,
+        clips: s.clips.map((c) =>
+          c.id === clip.id
+            ? {
+              ...c,
+              status: 'failed',
+              updated_at: new Date().toISOString(),
+              }
+            : c
+        ),
+      }));
+    }
+  },
+  [update]
+);
+``
+  useEffect(() => {
+    loadLibrary().then((stored) => {
+      setState(stored);
+      setLoaded(true);
+    });
+  }, []);
+
+  
+
+
 
   const importVideos = useCallback(
-    (assets: ImagePickerAsset[]) => {
-      const clips = clipsFromAssets(assets);
-      update((s) => ({ ...s, clips: [...clips, ...s.clips], lastImportCount: clips.length }));
-    },
-    [update]
-  );
+    async (assets: ImagePickerAsset[]) => {
+    const clips = clipsFromAssets(assets);
+    clips.forEach((clip, i) => {
+      assetMap.current[clip.id] = assets[i];
+    });
+    update((s) => ({
+      ...s,
+      clips: [...clips, ...s.clips],
+      lastImportCount: clips.length,
+    }));
+    clips.forEach((clip) => {
+      runAnalysis(clip);
+    });
+  },
+  [update, runAnalysis]
+);
 
   const loadSamples = useCallback(() => update(() => sampleLibrary()), [update]);
 
@@ -235,3 +309,5 @@ export function useLibrary() {
 }
 
 export type Library = ReturnType<typeof useLibrary>;
+
+

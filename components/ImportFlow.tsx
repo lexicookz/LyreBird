@@ -177,27 +177,7 @@ export function ImportBar({
     </View>
   );
 }
-async function uploadToAnalyze(videoAsset: ImagePickerAsset) {
-  const formData = new FormData();
-  formData.append('video', {
-    uri: videoAsset.uri,
-    name: videoAsset.fileName || 'upload.mp4',
-    type: videoAsset.type || 'upload/mp4',
-  }as any); 
 
-  const response = await fetch('http:/192.168.1.18:8000/analyze', {
-    method: 'POST',
-    body: formData,
-    headers: {
-      'Content-Type': 'multipart/form-data',}
-  });
-  if (!response.ok) { 
-    throw new Error(`Failed to upload video: ${response.statusText}`);
-  }
-  const result = await response.json();
-  console.log('Analysis result:', result);
-  return result;
-}
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   // sheet
