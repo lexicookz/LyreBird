@@ -7,6 +7,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MAX_CLIP_SECONDS } from '../data/library';
 import { Ionicons } from '@expo/vector-icons';
 import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
+import { ImagePickerAsset } from 'expo-image-picker';
 
 export default function AddVideoMenu({
   bottom,
@@ -53,6 +54,8 @@ export default function AddVideoMenu({
     </>
   );
 }
+
+
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   scrim: {

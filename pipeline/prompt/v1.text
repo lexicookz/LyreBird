@@ -1,0 +1,9 @@
+"""
+        Analyze this short-form video and extract
+        the required fields precisely.
+
+        Ensure the output strictly adheres to
+        the requested JSON schema.
+
+        If an optional field cannot be determined from the video, return null.
+        """,
