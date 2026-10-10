@@ -27,5 +27,82 @@
     "funnelStage": "TOFU",
     "formatTag": "ugc_testimonial",
     "description": "Creator tries on and reviews the new Forever 21 back-to-school collection available at Walmart."
+  },
+  "45718053472126cbfe748a27e38a1e18ff70566386a015a1eb2b3efa7ace1d28": {
+    "hook": "A crispy grilled cheese knife scrape followed by an epic cheese pull and soup dip.",
+    "transcript": null,
+    "onScreenText": [
+      "roasted tomato soup with grilled cheese"
+    ],
+    "shotBeats": [
+      "00:00 - Overhead shot presenting the tomato soup and toasted grilled cheese sandwich.",
+      "00:01 - Close-up knife scrape across the golden, crispy grilled cheese crust.",
+      "00:02 - Cutting the sandwich in half with knife crunch sound.",
+      "00:03 - Slow motion cheese pull separating the sandwich halves.",
+      "00:05 - Dipping the molten cheesy corner deep into the creamy tomato soup.",
+      "00:07 - Dropping ripe sliced tomatoes into a white baking dish.",
+      "00:09 - Adding sliced onions and a trimmed head of garlic to the dish.",
+      "00:12 - Drizzling extra virgin olive oil generously over the vegetables.",
+      "00:15 - Seasoning with sea salt flakes, red chili flakes, and black pepper.",
+      "00:22 - Hands tossing and massaging the vegetables to evenly coat them.",
+      "00:33 - Melting butter and adding tomato paste into a pan.",
+      "00:36 - Stirring and caramelizing the tomato paste.",
+      "00:41 - Pouring the blended roasted tomato mixture into the pan.",
+      "00:45 - Simmering the tomato soup gently.",
+      "00:47 - Swirling heavy cream into the soup.",
+      "00:49 - Garnishing with fresh chopped basil and grated parmesan cheese.",
+      "00:55 - Scraping another fresh garlic-rubbed toast for crunchy ASMR sound.",
+      "00:59 - Dipping the finished grilled cheese directly into the warm simmering soup."
+    ],
+    "pacing": "Snappy, rhythmic cuts synced to natural cooking ASMR sounds.",
+    "audioStyle": {
+      "backgroundMusic": "Upbeat chill lo-fi beat blended with crisp cooking ASMR",
+      "voiceover": null
+    },
+    "cta": null,
+    "whyItWorks": [
+      "Instant sensory hook using crunch sound and an indulgent cheese pull.",
+      "Satisfying ASMR sound design enhances viewer retention.",
+      "Visually appealing step-by-step format makes the comfort recipe look effortless."
+    ],
+    "format": "other",
+    "funnelStage": "TOFU",
+    "formatTag": null,
+    "description": "A sensory ASMR recipe for rich roasted tomato soup and crispy grilled cheese."
+  },
+  "7adc1f7f9423386d19b5163c9584ef242c2105583902237ac3578a39be8db991": {
+    "hook": "A crispy knife-scrape ASMR test on golden grilled cheese followed by an epic cheese pull and soup dip.",
+    "transcript": null,
+    "onScreenText": [
+      "roasted tomato soup with grilled cheese"
+    ],
+    "shotBeats": [
+      "00:00 - Overhead shot of roasted tomato soup bowl plated next to a grilled cheese sandwich.",
+      "00:01 - Close-up shot scraping a knife across the golden bread crust to show crispiness with ASMR crunch.",
+      "00:02 - Overhead shot cutting the sandwich in half on parchment paper.",
+      "00:03 - Slow-motion close-up cheese pull as the sandwich halves are pulled apart.",
+      "00:05 - Close-up dipping the cheesy sandwich corner into the rich tomato soup.",
+      "00:07 - Overhead view dumping cut tomatoes, onions, garlic bulb, and bell peppers into a baking dish.",
+      "00:12 - Drizzling olive oil and seasoning with sea salt, chili flakes, and black pepper, then tossing by hand.",
+      "00:33 - Top-down view frying tomato paste with melted butter in a stainless steel pan.",
+      "00:41 - Pouring the blended roasted vegetables into the pan and bringing to a gentle simmer.",
+      "00:46 - Swirling in heavy cream, torn fresh basil, and grated parmesan cheese.",
+      "00:55 - Close-up ASMR knife scrape on a garlic herb grilled cheese, then dipping it directly into the pan."
+    ],
+    "pacing": "Satisfying ASMR rhythm with crisp cuts focused on tactile cooking sounds and textures.",
+    "audioStyle": {
+      "backgroundMusic": "Mellow, rhythmic aesthetic track paired with prominent ASMR cooking audio",
+      "voiceover": null
+    },
+    "cta": null,
+    "whyItWorks": [
+      "Front-loads the ultimate payoff with an ASMR crunch, cheese pull, and dip in the first 5 seconds to stop the scroll.",
+      "High-fidelity ASMR sound design makes every step tactile, satisfying, and sensory.",
+      "Clean top-down framing makes the comforting recipe feel straightforward and easy to recreate."
+    ],
+    "format": "other",
+    "funnelStage": "TOFU",
+    "formatTag": null,
+    "description": "Sensory ASMR cooking demo of homemade roasted tomato soup and crispy grilled cheese."
   }
 }

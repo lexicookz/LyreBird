@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ImagePickerAsset } from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { mockAnalyses, mockClips } from './mockVideos';
 import type { AnalysisPayload, Clip, TypedAnalysis } from '../types';
 
@@ -110,7 +111,7 @@ export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): C
     return {
       id: newId(),
       owner_id: OWNER_ID,
-      local_uri: asset.uri,
+      //local_uri: asset.uri,
       recording_id: null,
       // Not uploaded yet: there is no bucket path until the upload step exists.
       storage_path: `local/${asset.fileName ?? name}`,
@@ -131,6 +132,12 @@ type UploadVideoInput = {
   fileName: string;
 };
 
+type AnalyzeVideoResponse = {
+  status: string;
+  data: AnalysisPayload;
+};
+
+
 export async function uploadToAnalyze(
   video: UploadVideoInput
 ): Promise<AnalysisPayload> {
@@ -140,16 +147,15 @@ export async function uploadToAnalyze(
   console.log('URI', video.uri);
   console.log('FILENAME', video.fileName);
   console.log('upload video', video);
-  formData.append('file', {
-    uri: video.uri,
-    name: video.fileName,
-    type: 'video/mp4',
-  } as any);
+  const file = new File(video.uri);
+  Object.defineProperty(file, 'name', { value: video.fileName });
+  formData.append('file', file);
 
   console.log('UPLOAD', video.uri); //to be removed
   console.log(JSON.stringify(video, null, 2)); //to be removed
 
-  const response = await fetch('http://192.168.1.18:8000/analyze-video',
+//// Replace with your local address before running.
+  const response = await fetch('http://172.21.151.175:8000/analyze-video',
     { method: 'POST',
       body: formData,});
   if (!response.ok) {
@@ -157,8 +163,11 @@ export async function uploadToAnalyze(
       `Failed to upload video: ${response.status} ${response.statusText}`
     );
   }
-  const result = await response.json();
-  return result;
+  const result = (await response.json()) as AnalyzeVideoResponse;
+  if (result.status !== 'success') {
+    throw new Error(`Video analysis returned unexpected status: ${result.status}`);
+  }
+  return result.data;
 }
 
 export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: number): Promise<TypedAnalysis> {
@@ -166,8 +175,8 @@ export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: 
   console.log('CALLING BACKEND', clip.id); // to be removed
   try {
     const payload = await uploadToAnalyze({
-      uri: (clip as any).local_uri,
-      fileName: `${clip.id}.mp4`,
+      uri: asset.uri,
+      fileName: asset.fileName || `${clip.id}.mp4`,
     } );
 
     return {
@@ -190,6 +199,23 @@ export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: 
 }
 
 // ---------- hook ----------
+export const ANALYSIS_MS = 6000;
+
+export function analysisProgress(
+  clip: Clip,
+  now = Date.now()
+) {
+  const started = Date.parse(clip.updated_at);
+
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      (now - started) / ANALYSIS_MS
+    )
+  );
+}
+
 
 export function useLibrary() {
   const [state, setState] = useState<LibraryState>(EMPTY);
@@ -309,5 +335,3 @@ export function useLibrary() {
 }
 
 export type Library = ReturnType<typeof useLibrary>;
-
-

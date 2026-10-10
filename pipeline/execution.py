@@ -1,3 +1,4 @@
+import hashlib
 import os
 import time
 from itertools import cycle
@@ -11,8 +12,21 @@ import json
 from schema import VideoAnalysis
 
 load_dotenv()
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompt")
+
+def load_prompt(prompt_name: str) -> str:
+    prompt_path = os.path.join(PROMPTS_DIR, f"{prompt_name}.text")
+    if not os.path.exists(prompt_path):
+        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+    with open(prompt_path, "r", encoding="utf-8") as p:
+        return p.read().strip()
 
 
+def _analysis_cache_key(video_hash: str, prompt_text: str) -> str:
+    return hashlib.sha256(f"{video_hash}\0{prompt_text}".encode("utf-8")).hexdigest()
+
+
+#API key handle/////////////////////////////////
 API_KEYS = [
     value.strip()
     for name, value in sorted(os.environ.items())
@@ -48,17 +62,19 @@ def roulette(client, contents, config, model="gemini-3.8-flash", max_attempts=1)
             error_text = str(e)
 
             if (
-                "429" in error_text
-                or "503" in error_text
-                or "RESOURCE_EXHAUSTED" in error_text.upper()):
-                wait_time = min(2 ** attempt, 30)
+                 "429" in error_text
+                 or "503" in error_text
+                 or "RESOURCE_EXHAUSTED" in error_text.upper()):
+                 wait_time = min(2 ** attempt, 30)
 
-                print(
-                    f"Rate-limited. "
-                    f"Retrying in {wait_time}s...")
-                time.sleep(wait_time)
-                last_error = e
-                continue
+                 print(
+                     f"Rate-limited. "
+                     f"Retrying in {wait_time}s...")
+                 time.sleep(wait_time)
+                 last_error = e
+            
+        
+            continue
             raise
     raise last_error
 
@@ -68,10 +84,15 @@ def analyze_video(
     max_attempts: int = 1,
     client: Optional[genai.Client] = None,
     prompt: Optional[str] = None,
+    prompt_version: str = "v2"
+
 ) -> str:
+    active_prompt = prompt if prompt is not None else load_prompt(prompt_version)
+
     #check cache
     video_hash = compute_video_hash(video_path)
-    cached_data = get_cached_analysis(video_hash)
+    cache_key = _analysis_cache_key(video_hash, active_prompt)
+    cached_data = get_cached_analysis(cache_key)
     if cached_data:
         print(f"Cache hit for [{video_hash[:8]}...]. Returning stored result.")
         return json.dumps(cached_data) if isinstance(cached_data, dict) else cached_data
@@ -94,19 +115,9 @@ def analyze_video(
         raise ValueError("Video processing failed.")
 
     print("Video active. Analyzing...")
+    print(f"Using prompt version: {prompt_version}")
 
-    contents = [
-        video_file,
-        """
-        Analyze this short-form video and extract
-        the required fields precisely.
-
-        Ensure the output strictly adheres to
-        the requested JSON schema.
-
-        If an optional field cannot be determined from the video, return null.
-        """,
-    ]
+    contents = [video_file, active_prompt]
 
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
@@ -115,10 +126,11 @@ def analyze_video(
     )
     #generate
     response = roulette(client=client, contents=contents, config=config, max_attempts=max_attempts)
+    
 
     try:
         data_to_store = json.loads(response.text)
-        set_cached_analysis(video_hash, data_to_store)
+        set_cached_analysis(cache_key, data_to_store)
     except Exception as e:
         print(f"Warning: Failed to cache analysis: {e}")
 
