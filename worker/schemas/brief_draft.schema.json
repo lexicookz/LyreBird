@@ -1,0 +1,252 @@
+{
+  "$defs": {
+    "Beat": {
+      "properties": {
+        "action": {
+          "description": "What happens in the shot.",
+          "title": "Action",
+          "type": "string"
+        },
+        "end_seconds": {
+          "minimum": 0,
+          "title": "End Seconds",
+          "type": "number"
+        },
+        "on_screen_text": {
+          "description": "Text overlay for this beat, or \"\".",
+          "title": "On Screen Text",
+          "type": "string"
+        },
+        "shot": {
+          "description": "Framing and subject, e.g. 'Overhead, hands on grinder'.",
+          "title": "Shot",
+          "type": "string"
+        },
+        "start_seconds": {
+          "minimum": 0,
+          "title": "Start Seconds",
+          "type": "number"
+        },
+        "voiceover": {
+          "description": "Spoken words over this beat, or \"\".",
+          "title": "Voiceover",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start_seconds",
+        "end_seconds",
+        "shot",
+        "action",
+        "voiceover",
+        "on_screen_text"
+      ],
+      "title": "Beat",
+      "type": "object"
+    },
+    "Hook": {
+      "properties": {
+        "line": {
+          "description": "The spoken opening line.",
+          "title": "Line",
+          "type": "string"
+        },
+        "on_screen_text": {
+          "description": "Text overlay for the hook, or \"\" for none.",
+          "title": "On Screen Text",
+          "type": "string"
+        },
+        "visual": {
+          "description": "What is on screen in the first seconds.",
+          "title": "Visual",
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "on_screen_text",
+        "visual"
+      ],
+      "title": "Hook",
+      "type": "object"
+    },
+    "PostingSlot": {
+      "description": "A relative slot. Dates are computed in code from day_offset, because\nmodels are unreliable at date arithmetic.",
+      "properties": {
+        "day_offset": {
+          "description": "Days after the brief is created.",
+          "maximum": 13,
+          "minimum": 0,
+          "title": "Day Offset",
+          "type": "integer"
+        },
+        "end_hour": {
+          "description": "Local time, 24h, exclusive.",
+          "maximum": 24,
+          "minimum": 1,
+          "title": "End Hour",
+          "type": "integer"
+        },
+        "platform": {
+          "enum": [
+            "tiktok",
+            "instagram",
+            "youtube",
+            "other"
+          ],
+          "title": "Platform",
+          "type": "string"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        },
+        "start_hour": {
+          "description": "Local time, 24h.",
+          "maximum": 23,
+          "minimum": 0,
+          "title": "Start Hour",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "day_offset",
+        "start_hour",
+        "end_hour",
+        "platform",
+        "rationale"
+      ],
+      "title": "PostingSlot",
+      "type": "object"
+    },
+    "WhyItWorks": {
+      "properties": {
+        "brief_element": {
+          "description": "Which part of this brief, e.g. 'hook' or 'beat 3'.",
+          "title": "Brief Element",
+          "type": "string"
+        },
+        "rationale": {
+          "description": "Why carrying it over should work for this brand.",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "source_detail": {
+          "description": "What the source video did there.",
+          "title": "Source Detail",
+          "type": "string"
+        },
+        "source_field": {
+          "description": "The analysis field it was adapted from.",
+          "enum": [
+            "hook",
+            "transcript",
+            "onScreenText",
+            "shotBeats",
+            "pacing",
+            "cta",
+            "format",
+            "funnelStage"
+          ],
+          "title": "Source Field",
+          "type": "string"
+        }
+      },
+      "required": [
+        "brief_element",
+        "source_field",
+        "source_detail",
+        "rationale"
+      ],
+      "title": "WhyItWorks",
+      "type": "object"
+    }
+  },
+  "description": "Gemini's structured output for one Adapt run. Stored as briefs.payload.",
+  "properties": {
+    "beats": {
+      "items": {
+        "$ref": "#/$defs/Beat"
+      },
+      "minItems": 1,
+      "title": "Beats",
+      "type": "array"
+    },
+    "caption": {
+      "title": "Caption",
+      "type": "string"
+    },
+    "cta": {
+      "title": "Cta",
+      "type": "string"
+    },
+    "funnel_stage": {
+      "enum": [
+        "TOFU",
+        "MOFU",
+        "BOFU"
+      ],
+      "title": "Funnel Stage",
+      "type": "string"
+    },
+    "hashtags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Hashtags",
+      "type": "array"
+    },
+    "hook": {
+      "$ref": "#/$defs/Hook"
+    },
+    "posting_slots": {
+      "items": {
+        "$ref": "#/$defs/PostingSlot"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Posting Slots",
+      "type": "array"
+    },
+    "production_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Production Notes",
+      "type": "array"
+    },
+    "target_duration_seconds": {
+      "maximum": 180,
+      "minimum": 1,
+      "title": "Target Duration Seconds",
+      "type": "integer"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "why_it_works": {
+      "items": {
+        "$ref": "#/$defs/WhyItWorks"
+      },
+      "minItems": 1,
+      "title": "Why It Works",
+      "type": "array"
+    }
+  },
+  "required": [
+    "title",
+    "funnel_stage",
+    "target_duration_seconds",
+    "hook",
+    "beats",
+    "cta",
+    "caption",
+    "hashtags",
+    "why_it_works",
+    "production_notes",
+    "posting_slots"
+  ],
+  "title": "BriefDraft",
+  "type": "object"
+}

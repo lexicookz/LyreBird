@@ -1,0 +1,44 @@
+# Render Blueprint for the LYREBIRD worker.
+#
+# The Expo app talks to Supabase directly under RLS, so only the worker is
+# deployed here — there is no general-purpose backend to host.
+#
+# To use: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file, creates the service, and redeploys on every push to main.
+
+services:
+  - type: web
+    name: lyrebird-worker
+    runtime: docker
+
+    # Built from the repo root rather than /worker: the worker imports the
+    # analysis contract from /pipeline (BE-12), so that directory has to be in
+    # the build context. The root .dockerignore keeps the Expo app and
+    # node_modules out of it.
+    dockerfilePath: ./worker/Dockerfile
+
+    plan: free
+
+    # Pick the region closest to the Supabase project: the worker talks to
+    # Postgres and storage on nearly every request, so the round trip between
+    # them matters far more than the one to the phone.
+    region: singapore
+
+    branch: main
+    autoDeploy: true
+
+    # Render marks a deploy failed if this does not return 2xx, which is the
+    # behaviour we want: /health returns 503 when it cannot reach Postgres, so
+    # a bad SUPABASE_URL or key fails the deploy instead of going live broken.
+    healthCheckPath: /health
+
+    envVars:
+      # sync: false means "prompt for this in the dashboard and keep it out of
+      # the repo". Two of these bypass RLS entirely or bill to a paid API, so
+      # they must never be committed — not even here.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

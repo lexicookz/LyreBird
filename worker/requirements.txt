@@ -1,8 +1,22 @@
-fastapi
-uvicorn[standard]
-supabase
-google-genai
-pydantic
-pydantic-settings
-python-multipart
-httpx
+# Pinned deliberately. These are the versions the image was built and verified
+# against (BE-08: /health served, one row read from clips). Unpinned, a rebuild
+# months later resolves to whatever is current, and a breaking release turns
+# into a build that worked yesterday and does not today, with nothing in the
+# diff to explain it. supabase and google-genai in particular move fast.
+#
+# To upgrade: bump here, rebuild, and re-run the BE-08 checks in worker/README.md.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+supabase==2.31.0
+google-genai==2.22.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+httpx==0.28.1
+
+# Needed by pipeline/cache.py, which the worker imports for analysis caching.
+# It was already present as a transitive dependency, so the image happened to
+# build -- but an unpinned transitive is exactly the rebuild that breaks for
+# no visible reason. Declared because the worker genuinely depends on it.
+python-dotenv==1.2.4
