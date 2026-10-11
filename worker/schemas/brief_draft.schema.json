@@ -1,7 +1,6 @@
 {
   "$defs": {
     "Beat": {
-      "additionalProperties": false,
       "properties": {
         "action": {
           "description": "What happens in the shot.",
@@ -46,7 +45,6 @@
       "type": "object"
     },
     "Hook": {
-      "additionalProperties": false,
       "properties": {
         "line": {
           "description": "The spoken opening line.",
@@ -73,7 +71,6 @@
       "type": "object"
     },
     "PostingSlot": {
-      "additionalProperties": false,
       "description": "A relative slot. Dates are computed in code from day_offset, because\nmodels are unreliable at date arithmetic.",
       "properties": {
         "day_offset": {
@@ -123,7 +120,6 @@
       "type": "object"
     },
     "WhyItWorks": {
-      "additionalProperties": false,
       "properties": {
         "brief_element": {
           "description": "Which part of this brief, e.g. 'hook' or 'beat 3'.",
@@ -166,7 +162,6 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
   "description": "Gemini's structured output for one Adapt run. Stored as briefs.payload.",
   "properties": {
     "beats": {
