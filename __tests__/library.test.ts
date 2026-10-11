@@ -28,6 +28,46 @@ function asset(fileName: string, durationMs: number): ImagePickerAsset {
   return { uri: `file:///${fileName}`, fileName, duration: durationMs, width: 1080, height: 1920 };
 }
 
+
+// The analysis path posts the video to the pipeline API. In a test runner
+// there is no server at that address, so every imported clip failed and the
+// "finishes analysing" expectations never had a chance. Mock the reply with a
+// valid analysis so these tests exercise the flow rather than the network.
+function mockAnalyzeVideo(delayMs = 60_000) {
+  const reply = {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      status: 'success',
+      data: {
+        hook: 'Opening hook',
+        transcript: null,
+        onScreenText: [],
+        shotBeats: [],
+        pacing: null,
+        audioStyle: { backgroundMusic: null, voiceover: null },
+        cta: null,
+        whyItWorks: [],
+        format: 'talking_head',
+        funnelStage: 'TOFU',
+        description: 'A test clip.',
+      },
+      model_version: 'gemini-3.8-flash',
+      prompt_version: 'v2',
+    }),
+  } as Response;
+
+  // Resolves on a timer rather than immediately, so a clip is observably
+  // 'processing' before it is 'ready'. A suite on fake timers advances past
+  // delayMs to finish the analysis; one on real timers leaves it pending and
+  // sees the analysing state, which is what it is asserting.
+  return jest
+    .spyOn(global, 'fetch')
+    .mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(reply), delayMs))
+    );
+}
+
 describe('library data', () => {
   test('picked videos become processing clips', () => {
     const [clip] = clipsFromAssets([asset('IMG_0001.MOV', 31_400)], new Date('2026-09-01T00:00:00Z'));
@@ -68,6 +108,8 @@ describe('library data', () => {
           format: 'talking_head',
           funnelStage: 'TOFU',
         },
+        model_version: 'gemini-3.8-flash',
+        prompt_version: 'v2',
       }),
     } as Response);
 
@@ -88,7 +130,11 @@ describe('library data', () => {
         expect.any(String),
         expect.objectContaining({ method: 'POST', body: expect.any(Object) })
       );
-      expect(result.hook).toBe('Opening hook');
+      expect(result.payload.hook).toBe('Opening hook');
+      // Taken from the response, not hardcoded: the endpoint defaults to
+      // prompt v2, and the app used to record v1 regardless.
+      expect(result.promptVersion).toBe('v2');
+      expect(result.modelVersion).toBe('gemini-3.8-flash');
     } finally {
       fetch.mockRestore();
       global.FormData = originalFormData;
@@ -96,12 +142,16 @@ describe('library data', () => {
   });
 
   describe('useLibrary', () => {
+    let analyzeFetch: jest.SpyInstance;
+
     beforeEach(async () => {
       await AsyncStorage.clear();
+      analyzeFetch = mockAnalyzeVideo(ANALYSIS_MS);
       jest.useFakeTimers();
     });
     afterEach(() => {
       jest.useRealTimers();
+      analyzeFetch.mockRestore();
     });
 
     test('imported clips finish analysing on their own and are saved', async () => {

@@ -10,6 +10,46 @@ import { mockBriefs } from '../data/mockVideos';
 import { BRAND_COLORS, brandColorOf } from '../data/brandSetup';
 import { darkColors, lightColors } from '../theme';
 
+
+// The analysis path posts the video to the pipeline API. In a test runner
+// there is no server at that address, so every imported clip failed and the
+// "finishes analysing" expectations never had a chance. Mock the reply with a
+// valid analysis so these tests exercise the flow rather than the network.
+function mockAnalyzeVideo(delayMs = 60_000) {
+  const reply = {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      status: 'success',
+      data: {
+        hook: 'Opening hook',
+        transcript: null,
+        onScreenText: [],
+        shotBeats: [],
+        pacing: null,
+        audioStyle: { backgroundMusic: null, voiceover: null },
+        cta: null,
+        whyItWorks: [],
+        format: 'talking_head',
+        funnelStage: 'TOFU',
+        description: 'A test clip.',
+      },
+      model_version: 'gemini-3.8-flash',
+      prompt_version: 'v2',
+    }),
+  } as Response;
+
+  // Resolves on a timer rather than immediately, so a clip is observably
+  // 'processing' before it is 'ready'. A suite on fake timers advances past
+  // delayMs to finish the analysis; one on real timers leaves it pending and
+  // sees the analysing state, which is what it is asserting.
+  return jest
+    .spyOn(global, 'fetch')
+    .mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(reply), delayMs))
+    );
+}
+
 describe('palettes', () => {
   test('light and dark have exactly the same colour names', () => {
     expect(Object.keys(darkColors).sort()).toEqual(Object.keys(lightColors).sort());
@@ -89,6 +129,7 @@ async function withOneAnalysedClip() {
 
 describe('App', () => {
   beforeEach(async () => {
+    mockAnalyzeVideo();
     await AsyncStorage.clear();
   });
 
