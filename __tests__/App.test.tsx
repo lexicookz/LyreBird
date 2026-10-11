@@ -103,6 +103,52 @@ jest.mock('../data/account', () => {
     signOut: async () => {
       await store().removeItem(KEY);
     },
+    currentUserId: async () => {
+      const raw = await store().getItem(KEY);
+      return raw ? 'user-1' : null;
+    },
+  };
+});
+
+// Clips live in Supabase now. These tests are about App's navigation and
+// screens, so the data layer answers from memory -- reaching a database would
+// make them a different kind of test, and a slower one.
+jest.mock('../lib/clips', () => {
+  const rows: { clips: any[]; analyses: any[] } = { clips: [], analyses: [] };
+  let n = 0;
+  return {
+    CLIPS_BUCKET: 'clips',
+    __rows: rows,
+    fetchLibrary: jest.fn(async () => ({ clips: [...rows.clips], analyses: [...rows.analyses] })),
+    uploadClip: jest.fn(async (ownerId: string, asset: any) => {
+      n += 1;
+      const stamp = new Date().toISOString();
+      const clip = {
+        id: `db-${n}`,
+        owner_id: ownerId,
+        recording_id: null,
+        storage_path: `${ownerId}/${asset.fileName ?? `clip-${n}.mp4`}`,
+        thumbnail_path: null,
+        thumbnail_url: null,
+        title: (asset.fileName ?? `Saved video ${n}`).replace(/\.[^.]+$/, ''),
+        tags: [],
+        duration_seconds: asset.duration ? Math.round(asset.duration / 1000) : null,
+        position_in_parent: null,
+        status: 'processing',
+        error_message: null,
+        created_at: stamp,
+        updated_at: stamp,
+      };
+      rows.clips = [clip, ...rows.clips];
+      return clip;
+    }),
+    requestAnalysis: jest.fn(async (clipId: string) => {
+      rows.clips = rows.clips.map((c) => (c.id === clipId ? { ...c, status: 'processing' } : c));
+    }),
+    deleteClip: jest.fn(async (clip: any) => {
+      rows.clips = rows.clips.filter((c) => c.id !== clip.id);
+      rows.analyses = rows.analyses.filter((a) => a.clip_id !== clip.id);
+    }),
   };
 });
 
@@ -151,24 +197,28 @@ async function signedIn() {
   ]);
 }
 
-/** One analysed sample clip in the library, with no brief yet. */
+/**
+ * One analysed sample clip in the library, with no brief yet.
+ *
+ * Seeded into the mocked data layer rather than AsyncStorage: the library
+ * reads from the database now, so a row in local storage would never be seen.
+ */
 async function withOneAnalysedClip() {
   const sample = sampleLibrary();
   const id = 'cccccccc-0000-4000-8000-000000000001';
-  await AsyncStorage.setItem(
-    'lyrebird.library',
-    JSON.stringify({
-      clips: sample.clips.filter((c) => c.id === id),
-      analyses: sample.analyses.filter((a) => a.clip_id === id),
-      lastImportCount: null,
-    })
-  );
+  const clipsApi = require('../lib/clips');
+  clipsApi.__rows.clips = sample.clips.filter((c) => c.id === id);
+  clipsApi.__rows.analyses = sample.analyses.filter((a) => a.clip_id === id);
 }
 
 describe('App', () => {
   beforeEach(async () => {
     mockAnalyzeVideo();
     await AsyncStorage.clear();
+    // The mocked data layer holds rows between tests; clear it like storage.
+    const clipsApi = require('../lib/clips');
+    clipsApi.__rows.clips = [];
+    clipsApi.__rows.analyses = [];
   });
 
   // ---------- first run and accounts ----------
@@ -314,8 +364,9 @@ describe('App', () => {
     await fireEvent.press(await findByText('Delete video'));
 
     expect(await findByText('Nothing saved yet')).toBeTruthy();
-    const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.library')) ?? '{}');
-    expect(saved.clips).toEqual([]);
+    // Deleted from the database, not from local storage -- that is where
+    // clips live now, and the row going is what makes the deletion stick.
+    expect(require('../lib/clips').__rows.clips).toEqual([]);
     expect(getByText('Add your first videos')).toBeTruthy();
   });
 

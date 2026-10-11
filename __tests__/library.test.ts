@@ -5,9 +5,26 @@ import {
   ANALYSIS_MS,
   analysisProgress,
   clipsFromAssets,
-  uploadToAnalyze,
   useLibrary,
 } from '../data/library';
+
+// Clips live in Supabase now. These tests are about the hook's wiring --
+// an import shows placeholders, then shows what the database returned -- so
+// the data layer is mocked. Whether the upload and RLS actually work is an
+// integration question and is covered against a real stack instead.
+jest.mock('../lib/clips', () => ({
+  CLIPS_BUCKET: 'clips',
+  fetchLibrary: jest.fn(),
+  uploadClip: jest.fn(),
+  requestAnalysis: jest.fn(),
+  deleteClip: jest.fn(),
+}));
+
+jest.mock('../data/account', () => ({
+  currentUserId: jest.fn(async () => 'user-1'),
+}));
+
+const clipsApi = require('../lib/clips');
 
 jest.mock('expo-file-system', () => ({
   File: class extends Blob {
@@ -88,93 +105,127 @@ describe('library data', () => {
     expect(analysisProgress(clip, 1_000_000 + ANALYSIS_MS * 2)).toBe(1);
   });
 
-  test('upload sends an Expo File part and returns the analysis from the worker envelope', async () => {
-    const originalFormData = global.FormData;
-    const append = jest.fn();
-    global.FormData = class {
-      append = append;
-    } as unknown as typeof FormData;
-    const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        status: 'success',
-        data: {
-          hook: 'Opening hook',
-          transcript: null,
-          onScreenText: [],
-          shotBeats: [],
-          pacing: null,
-          cta: null,
-          format: 'talking_head',
-          funnelStage: 'TOFU',
-        },
-        model_version: 'gemini-3.8-flash',
-        prompt_version: 'v2',
-      }),
-    } as Response);
-
-    try {
-      const result = await uploadToAnalyze({
-        uri: 'file:///cache/temporary.mp4',
-        fileName: 'original-video.mp4',
-      });
-
-      expect(append).toHaveBeenCalledTimes(1);
-      const uploadedFile = append.mock.calls[0][1];
-      expect(uploadedFile).toBeInstanceOf(Blob);
-      expect(uploadedFile).toMatchObject({
-        name: 'original-video.mp4',
-        type: 'video/mp4',
-      });
-      expect(fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ method: 'POST', body: expect.any(Object) })
-      );
-      expect(result.payload.hook).toBe('Opening hook');
-      // Taken from the response, not hardcoded: the endpoint defaults to
-      // prompt v2, and the app used to record v1 regardless.
-      expect(result.promptVersion).toBe('v2');
-      expect(result.modelVersion).toBe('gemini-3.8-flash');
-    } finally {
-      fetch.mockRestore();
-      global.FormData = originalFormData;
-    }
-  });
-
   describe('useLibrary', () => {
-    let analyzeFetch: jest.SpyInstance;
-
-    beforeEach(async () => {
-      await AsyncStorage.clear();
-      analyzeFetch = mockAnalyzeVideo(ANALYSIS_MS);
-      jest.useFakeTimers();
+    const clipRow = (id: string, title: string, status = 'ready') => ({
+      id,
+      owner_id: 'user-1',
+      recording_id: null,
+      storage_path: `user-1/${title}`,
+      thumbnail_path: null,
+      thumbnail_url: null,
+      title,
+      tags: [],
+      duration_seconds: 20,
+      position_in_parent: null,
+      status,
+      error_message: null,
+      created_at: '2026-10-11T00:00:00Z',
+      updated_at: '2026-10-11T00:00:00Z',
     });
-    afterEach(() => {
-      jest.useRealTimers();
-      analyzeFetch.mockRestore();
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      clipsApi.fetchLibrary.mockResolvedValue({ clips: [], analyses: [] });
+      clipsApi.uploadClip.mockImplementation(async (_userId: string, a: ImagePickerAsset) =>
+        clipRow(`db-${a.fileName}`, a.fileName ?? 'clip', 'processing')
+      );
+      clipsApi.requestAnalysis.mockResolvedValue(undefined);
+      clipsApi.deleteClip.mockResolvedValue(undefined);
     });
 
-    test('imported clips finish analysing on their own and are saved', async () => {
+    test('an import uploads each video, asks for an analysis, and shows what the database returned', async () => {
       const { result } = await renderHook(() => useLibrary());
-      await act(async () => {
-        await jest.runOnlyPendingTimersAsync();
-      });
+      await act(async () => {});
       expect(result.current.loaded).toBe(true);
 
-      await act(async () => {
-        result.current.importVideos([asset('one.mp4', 20_000), asset('two.mp4', 30_000)]);
+      // Once the uploads are done the hook re-reads, so the rows it ends up
+      // showing are the database's, not the placeholders it made.
+      clipsApi.fetchLibrary.mockResolvedValue({
+        clips: [clipRow('db-one.mp4', 'one.mp4'), clipRow('db-two.mp4', 'two.mp4')],
+        analyses: [],
       });
-      expect(result.current.clips.map((c) => c.status)).toEqual(['processing', 'processing']);
+
+      await act(async () => {
+        await result.current.importVideos([asset('one.mp4', 20_000), asset('two.mp4', 30_000)]);
+      });
+
+      expect(clipsApi.uploadClip).toHaveBeenCalledTimes(2);
+      expect(clipsApi.requestAnalysis).toHaveBeenCalledWith('db-one.mp4');
+      expect(clipsApi.requestAnalysis).toHaveBeenCalledWith('db-two.mp4');
+
+      expect(result.current.clips.map((c) => c.id)).toEqual(['db-one.mp4', 'db-two.mp4']);
       expect(result.current.lastImportCount).toBe(2);
+      expect(result.current.error).toBeNull();
+    });
 
-      await act(async () => {
-        await jest.advanceTimersByTimeAsync(ANALYSIS_MS + 500);
+    test('a failed upload marks that clip failed and says why, without losing the others', async () => {
+      clipsApi.uploadClip.mockImplementationOnce(async () => {
+        throw new Error('Upload failed: network');
       });
 
-      expect(result.current.clips.map((c) => c.status)).toEqual(['ready', 'ready']);
-      expect(result.current.analyses).toHaveLength(2);
-      const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.library')) ?? '{}');
-      expect(saved.clips).toHaveLength(2);
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+
+      await act(async () => {
+        await result.current.importVideos([asset('bad.mp4', 10_000), asset('good.mp4', 10_000)]);
+      });
+
+      expect(result.current.error).toContain('Upload failed');
+      // The one that worked still got analysed.
+      expect(clipsApi.requestAnalysis).toHaveBeenCalledTimes(1);
+    });
+
+    test('a clip saved but not analysed is kept, not discarded', async () => {
+      clipsApi.requestAnalysis.mockRejectedValue(new Error('worker unreachable'));
+      clipsApi.fetchLibrary.mockResolvedValue({
+        clips: [clipRow('db-one.mp4', 'one.mp4', 'processing')],
+        analyses: [],
+      });
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+      await act(async () => {
+        await result.current.importVideos([asset('one.mp4', 10_000)]);
+      });
+
+      // The upload succeeded, so the clip exists. A failed analysis is not a
+      // lost video, and the row is still there to retry from.
+      expect(result.current.clips).toHaveLength(1);
+      expect(clipsApi.uploadClip).toHaveBeenCalledTimes(1);
+    });
+
+    test('retrying actually re-runs the analysis', async () => {
+      clipsApi.fetchLibrary.mockResolvedValue({
+        clips: [clipRow('db-one.mp4', 'one.mp4', 'failed')],
+        analyses: [],
+      });
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+
+      await act(async () => {
+        await result.current.retryAnalysis('db-one.mp4');
+      });
+
+      // The old version only set the status back to 'processing' and nothing
+      // ran, so a failed clip could never recover.
+      expect(clipsApi.requestAnalysis).toHaveBeenCalledWith('db-one.mp4');
+    });
+
+    test('deleting removes the row and the file', async () => {
+      const row = clipRow('db-one.mp4', 'one.mp4');
+      clipsApi.fetchLibrary.mockResolvedValue({ clips: [row], analyses: [] });
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+
+      clipsApi.fetchLibrary.mockResolvedValue({ clips: [], analyses: [] });
+      await act(async () => {
+        await result.current.removeClip('db-one.mp4');
+      });
+
+      expect(clipsApi.deleteClip).toHaveBeenCalledWith(expect.objectContaining({ id: 'db-one.mp4' }));
+      expect(result.current.clips).toHaveLength(0);
     });
   });
 });
