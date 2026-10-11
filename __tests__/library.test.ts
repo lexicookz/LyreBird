@@ -14,7 +14,9 @@ import {
 // integration question and is covered against a real stack instead.
 jest.mock('../lib/clips', () => ({
   CLIPS_BUCKET: 'clips',
+  LIBRARY_PAGE_SIZE: 24,
   fetchLibrary: jest.fn(),
+  fetchTags: jest.fn(async () => []),
   uploadClip: jest.fn(),
   requestAnalysis: jest.fn(),
   deleteClip: jest.fn(),
@@ -125,7 +127,7 @@ describe('library data', () => {
 
     beforeEach(() => {
       jest.clearAllMocks();
-      clipsApi.fetchLibrary.mockResolvedValue({ clips: [], analyses: [] });
+      clipsApi.fetchLibrary.mockResolvedValue({ clips: [], analyses: [], hasMore: false, total: 0 });
       clipsApi.uploadClip.mockImplementation(async (_userId: string, a: ImagePickerAsset) =>
         clipRow(`db-${a.fileName}`, a.fileName ?? 'clip', 'processing')
       );
@@ -142,7 +144,7 @@ describe('library data', () => {
       // showing are the database's, not the placeholders it made.
       clipsApi.fetchLibrary.mockResolvedValue({
         clips: [clipRow('db-one.mp4', 'one.mp4'), clipRow('db-two.mp4', 'two.mp4')],
-        analyses: [],
+        analyses: [], hasMore: false, total: 2,
       });
 
       await act(async () => {
@@ -179,7 +181,7 @@ describe('library data', () => {
       clipsApi.requestAnalysis.mockRejectedValue(new Error('worker unreachable'));
       clipsApi.fetchLibrary.mockResolvedValue({
         clips: [clipRow('db-one.mp4', 'one.mp4', 'processing')],
-        analyses: [],
+        analyses: [], hasMore: false, total: 1,
       });
 
       const { result } = await renderHook(() => useLibrary());
@@ -197,7 +199,7 @@ describe('library data', () => {
     test('retrying actually re-runs the analysis', async () => {
       clipsApi.fetchLibrary.mockResolvedValue({
         clips: [clipRow('db-one.mp4', 'one.mp4', 'failed')],
-        analyses: [],
+        analyses: [], hasMore: false, total: 1,
       });
 
       const { result } = await renderHook(() => useLibrary());
@@ -212,14 +214,107 @@ describe('library data', () => {
       expect(clipsApi.requestAnalysis).toHaveBeenCalledWith('db-one.mp4');
     });
 
-    test('deleting removes the row and the file', async () => {
-      const row = clipRow('db-one.mp4', 'one.mp4');
-      clipsApi.fetchLibrary.mockResolvedValue({ clips: [row], analyses: [] });
+    test('the query asks Postgres for the filter, the sort and the page', async () => {
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+
+      await act(async () => {
+        result.current.setTags(['morning']);
+      });
+      await act(async () => {});
+
+      // The filter is an argument to the query, not something applied after
+      // the rows arrive -- that is the whole point of BE-18.
+      expect(clipsApi.fetchLibrary).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tags: ['morning'] })
+      );
+
+      await act(async () => {
+        result.current.setSort('oldest');
+      });
+      await act(async () => {});
+      expect(clipsApi.fetchLibrary).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: 'oldest', tags: ['morning'] })
+      );
+    });
+
+    test('loadMore appends the next page instead of replacing it', async () => {
+      const first = [clipRow('a', 'a.mp4'), clipRow('b', 'b.mp4')];
+      const second = [clipRow('c', 'c.mp4')];
+      clipsApi.fetchLibrary.mockImplementation(async (q: any = {}) =>
+        (q.page ?? 0) === 0
+          ? { clips: first, analyses: [], hasMore: true, total: 3 }
+          : { clips: second, analyses: [], hasMore: false, total: 3 }
+      );
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+      expect(result.current.clips).toHaveLength(2);
+      expect(result.current.hasMore).toBe(true);
+
+      await act(async () => {
+        await result.current.loadMore();
+      });
+
+      expect(result.current.clips.map((c) => c.id)).toEqual(['a', 'b', 'c']);
+      expect(result.current.hasMore).toBe(false);
+    });
+
+    test('loading more twice does not duplicate rows', async () => {
+      clipsApi.fetchLibrary.mockImplementation(async (q: any = {}) =>
+        (q.page ?? 0) === 0
+          ? { clips: [clipRow('a', 'a.mp4')], analyses: [], hasMore: true, total: 2 }
+          : { clips: [clipRow('b', 'b.mp4')], analyses: [], hasMore: false, total: 2 }
+      );
 
       const { result } = await renderHook(() => useLibrary());
       await act(async () => {});
 
-      clipsApi.fetchLibrary.mockResolvedValue({ clips: [], analyses: [] });
+      // A scroll handler can fire twice before the first request returns.
+      await act(async () => {
+        await Promise.all([result.current.loadMore(), result.current.loadMore()]);
+      });
+
+      expect(result.current.clips.map((c) => c.id)).toEqual(['a', 'b']);
+    });
+
+    test('changing a filter goes back to the first page', async () => {
+      clipsApi.fetchLibrary.mockImplementation(async (q: any = {}) => ({
+        clips: [clipRow(`p${q.page ?? 0}`, 'x.mp4')],
+        analyses: [],
+        hasMore: true,
+        total: 99,
+      }));
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+      await act(async () => {
+        await result.current.loadMore();
+      });
+      expect(result.current.clips).toHaveLength(2);
+
+      await act(async () => {
+        result.current.setTags(['saas']);
+      });
+      await act(async () => {});
+
+      // Keeping page two of the old filter would be showing answers to a
+      // question nobody asked.
+      const lastCall = clipsApi.fetchLibrary.mock.calls.at(-1)[0];
+      expect(lastCall.tags).toEqual(['saas']);
+      // No page asked for at all, which is page one.
+      expect(lastCall.page ?? 0).toBe(0);
+      expect(result.current.clips).toHaveLength(1);
+    });
+
+    test('deleting removes the row and the file', async () => {
+      const row = clipRow('db-one.mp4', 'one.mp4');
+      clipsApi.fetchLibrary.mockResolvedValue({ clips: [row], analyses: [], hasMore: false, total: 1 });
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+
+      clipsApi.fetchLibrary.mockResolvedValue({ clips: [], analyses: [], hasMore: false, total: 0 });
       await act(async () => {
         await result.current.removeClip('db-one.mp4');
       });

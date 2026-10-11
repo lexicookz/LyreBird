@@ -119,7 +119,35 @@ jest.mock('../lib/clips', () => {
   return {
     CLIPS_BUCKET: 'clips',
     __rows: rows,
-    fetchLibrary: jest.fn(async () => ({ clips: [...rows.clips], analyses: [...rows.analyses] })),
+    LIBRARY_PAGE_SIZE: 24,
+    // Filtering, sorting and paging happen in Postgres now, so the mock
+    // answers the same shape the query does rather than a bare list.
+    fetchLibrary: jest.fn(async (q: any = {}) => {
+      let clips = [...rows.clips];
+      if (q.tags?.length) {
+        clips = clips.filter((c: any) => q.tags.every((t: string) => (c.tags ?? []).includes(t)));
+      }
+      clips.sort((a: any, b: any) =>
+        q.sort === 'oldest'
+          ? Date.parse(a.created_at) - Date.parse(b.created_at)
+          : Date.parse(b.created_at) - Date.parse(a.created_at)
+      );
+      const size = q.pageSize ?? 24;
+      const from = (q.page ?? 0) * size;
+      const slice = clips.slice(from, from + size);
+      const ids = new Set(slice.map((c: any) => c.id));
+      return {
+        clips: slice,
+        analyses: rows.analyses.filter((a: any) => ids.has(a.clip_id)),
+        hasMore: from + slice.length < clips.length,
+        total: clips.length,
+      };
+    }),
+    fetchTags: jest.fn(async () => {
+      const seen = new Set<string>();
+      for (const c of rows.clips) for (const t of c.tags ?? []) seen.add(t);
+      return [...seen].sort();
+    }),
     uploadClip: jest.fn(async (ownerId: string, asset: any) => {
       n += 1;
       const stamp = new Date().toISOString();

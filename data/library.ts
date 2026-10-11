@@ -13,7 +13,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import { currentUserId } from './account';
-import { deleteClip, fetchLibrary, requestAnalysis, uploadClip } from '../lib/clips';
+import {
+  deleteClip,
+  fetchLibrary,
+  fetchTags,
+  requestAnalysis,
+  uploadClip,
+  type LibraryQuery,
+  type LibrarySort,
+} from '../lib/clips';
 import { mockAnalyses, mockClips } from './mockVideos';
 import type { AnalysisPayload, Clip, TypedAnalysis } from '../types';
 
@@ -74,9 +82,14 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
 // writes its own row and then re-reads, so the screen shows what the database
 // actually holds rather than what the app hoped it wrote.
 
-async function loadLibrary(): Promise<LibraryState> {
-  const { clips, analyses } = await fetchLibrary();
-  return { clips, analyses: analyses as TypedAnalysis[], lastImportCount: null };
+async function loadLibrary(query: LibraryQuery = {}): Promise<LibraryState & { hasMore: boolean }> {
+  const page = await fetchLibrary(query);
+  return {
+    clips: page.clips,
+    analyses: page.analyses as TypedAnalysis[],
+    lastImportCount: null,
+    hasMore: page.hasMore,
+  };
 }
 
 // ---------- pure helpers (exported for tests) ----------
@@ -167,6 +180,16 @@ export function useLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
+  // What the database is being asked for. Changing this reloads from page 0,
+  // because a filter that kept the old page's rows would be showing results
+  // from a question nobody asked.
+  const [sort, setSortState] = useState<LibrarySort>('newest');
+  const [tags, setTagsState] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   /**
    * Re-read from the database.
    *
@@ -177,8 +200,16 @@ export function useLibrary() {
    */
   const refresh = useCallback(async (clearError = true) => {
     try {
-      const next = await loadLibrary();
-      setState((current) => ({ ...next, lastImportCount: current.lastImportCount }));
+      // Back to the first page: after an import or a delete, which page the
+      // user was on no longer describes anything.
+      const next = await loadLibrary({ sort, tags });
+      setPage(0);
+      setHasMore(next.hasMore);
+      setState((current) => ({
+        clips: next.clips,
+        analyses: next.analyses,
+        lastImportCount: current.lastImportCount,
+      }));
       // Actions pass false. An upload that failed still has something to say,
       // and the re-read that follows it succeeding does not make that untrue --
       // clearing here would wipe the only explanation the user gets.
@@ -186,7 +217,35 @@ export function useLibrary() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your library.');
     }
-  }, []);
+  }, [sort, tags]);
+
+  /** The next page, appended. */
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await loadLibrary({ sort, tags, page: page + 1 });
+      setPage((p) => p + 1);
+      setHasMore(next.hasMore);
+      setState((current) => {
+        // Guard against a double-fire appending the same rows twice.
+        const known = new Set(current.clips.map((c) => c.id));
+        const fresh = next.clips.filter((c) => !known.has(c.id));
+        return {
+          ...current,
+          clips: [...current.clips, ...fresh],
+          analyses: [...current.analyses, ...next.analyses],
+        };
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load more clips.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, page, sort, tags]);
+
+  const setSort = useCallback((next: LibrarySort) => setSortState(next), []);
+  const setTags = useCallback((next: string[]) => setTagsState(next), []);
 
   useEffect(() => {
     let active = true;
@@ -198,6 +257,20 @@ export function useLibrary() {
       active = false;
     };
   }, [refresh]);
+
+  // The tags that exist, for the filter row. Read once rather than on every
+  // query: the set changes when clips are added, not when one is filtered.
+  useEffect(() => {
+    let active = true;
+    fetchTags()
+      .then((t) => {
+        if (active) setAllTags(t);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [state.clips.length]);
 
   /** Shows a clip as failed without waiting for a round trip. */
   const markFailed = useCallback((clipId: string) => {
@@ -312,6 +385,15 @@ export function useLibrary() {
     loaded,
     error,
     now,
+    // query state, all answered by Postgres rather than in the app
+    sort,
+    setSort,
+    tags,
+    setTags,
+    allTags,
+    hasMore,
+    loadingMore,
+    loadMore,
     refresh,
     importVideos,
     loadSamples,

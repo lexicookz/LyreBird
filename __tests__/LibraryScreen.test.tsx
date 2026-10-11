@@ -21,6 +21,13 @@ async function renderLibrary(overrides: Partial<React.ComponentProps<typeof Libr
     onLoadSamples: jest.fn(),
     onRetry: jest.fn(),
     onDelete: jest.fn(),
+    tags: [],
+    allTags: [],
+    onTagsChange: jest.fn(),
+    onSortChange: jest.fn(),
+    hasMore: false,
+    loadingMore: false,
+    onLoadMore: jest.fn(),
     ...overrides,
   };
   const screen = await render(<LibraryScreen {...props} />);

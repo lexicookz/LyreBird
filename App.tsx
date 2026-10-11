@@ -314,6 +314,13 @@ function AppContent() {
             briefClipIds={briefClipIds}
             lastImportCount={library.lastImportCount}
             now={library.now}
+            tags={library.tags}
+            allTags={library.allTags}
+            onTagsChange={library.setTags}
+            onSortChange={library.setSort}
+            hasMore={library.hasMore}
+            loadingMore={library.loadingMore}
+            onLoadMore={library.loadMore}
             brandName={brandSetup?.name}
             brandColor={brandColor}
             focus={brandSetup?.focus}
