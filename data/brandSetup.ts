@@ -18,7 +18,25 @@ export type BrandSetup = {
   /** The funnel stage the user wants more of, and its target share (0-100). */
   focus: FunnelStage;
   focusShare: number;
+  /** Colour behind the brand's initial. Unset means "pick one from the name". */
+  color?: BrandColor;
 };
+
+/** Pastels a brand mark can use; keys into `colors` in theme/index.ts. */
+export const BRAND_COLORS = ['green', 'lilac', 'pink', 'sky', 'peach'] as const;
+export type BrandColor = (typeof BRAND_COLORS)[number];
+
+/** The brand's chosen colour, or a stable one picked from its name. */
+export function brandColorOf(setup: Pick<BrandSetup, 'name' | 'color'> | null | undefined): BrandColor {
+  if (setup?.color) return setup.color;
+  const name = setup?.name.trim().toLowerCase() ?? '';
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return BRAND_COLORS[hash % BRAND_COLORS.length];
+}
+
+/** Voice options offered in setup and on the Branding screen. */
+export const TONES = ['Plain-spoken', 'Warm', 'Dry humour', 'Expert', 'No hype', 'Playful', 'Clinical', 'Blunt'];
 
 export const emptyBrandSetup: BrandSetup = {
   name: '',
@@ -68,6 +86,11 @@ export function applyBrandSetup(base: Brand, setup: BrandSetup): Brand {
     target_audience: setup.target_audience || null,
     tone_of_voice: setup.tones.length ? setup.tones.join(', ') : null,
   };
+}
+
+/** Saves edits made on the Branding screen after onboarding. */
+export async function saveBrandSetup(brand: BrandSetup) {
+  await AsyncStorage.setItem(BRAND_KEY, JSON.stringify(brand));
 }
 
 /** Clears onboarding + brand data, as if this were a fresh install (our "sign out"). */

@@ -4,9 +4,10 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BrandMark } from '../components/ui';
 import { CalendarItem, formatShortDate, parseISODate } from '../data/calendar';
 import { shotsOf } from '../data/briefs';
-import { colors, fonts, funnelStages, pagePadding, radius } from '../theme';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Brief, FunnelStage } from '../types';
 
 type Tab = 'unscheduled' | 'planned' | 'posted';
@@ -33,6 +34,7 @@ export default function BriefsScreen({
   calendarItems,
   stageOf,
   brandName,
+  brandColor,
   onSelectBrief,
   onSchedule,
   onOpenBrandProfile,
@@ -41,29 +43,29 @@ export default function BriefsScreen({
   calendarItems: CalendarItem[];
   stageOf: (brief: Brief) => FunnelStage;
   brandName?: string;
+  brandColor?: string;
   onSelectBrief: (brief: Brief) => void;
   onSchedule: (briefId: string) => void;
   onOpenBrandProfile: () => void;
 }) {
+  const { stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const [tab, setTab] = useState<Tab>('unscheduled');
   const entryFor = (brief: Brief) => calendarItems.find((i) => i.briefId === brief.id);
   const visible = briefs.filter((b) => tabOf(entryFor(b)) === tab);
   const undated = briefs.filter((b) => !entryFor(b)).length;
-  const brandInitial = (brandName?.trim()[0] ?? '').toUpperCase();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>BRIEFS</Text>
-          <Pressable
+          <BrandMark
+            name={brandName}
+            color={brandColor}
             onPress={onOpenBrandProfile}
-            style={styles.avatar}
-            accessibilityRole="button"
-            accessibilityLabel="Brand profile"
-          >
-            {!!brandInitial && <Text style={styles.avatarText}>{brandInitial}</Text>}
-          </Pressable>
+            accessibilityLabel="Settings"
+          />
         </View>
 
         {briefs.length === 0 ? (
@@ -106,7 +108,7 @@ export default function BriefsScreen({
                   const entry = entryFor(brief);
                   const shots = shotsOf(brief).length;
                   const meta = [
-                    funnelStages[stage].label,
+                    stages[stage].label,
                     shots ? `${shots} shot${shots === 1 ? '' : 's'}` : 'shot list not written',
                     entry ? formatShortDate(parseISODate(entry.date)) : shots ? 'no date' : null,
                   ]
@@ -117,7 +119,7 @@ export default function BriefsScreen({
                       key={brief.id}
                       onPress={() => onSelectBrief(brief)}
                       accessibilityRole="button"
-                      style={[styles.card, { backgroundColor: funnelStages[stage].color }]}
+                      style={[styles.card, { backgroundColor: stages[stage].color }]}
                     >
                       <View style={{ flex: 1, gap: 4 }}>
                         <Text style={styles.hook}>“{brief.hook ?? 'Untitled brief'}”</Text>
@@ -155,10 +157,10 @@ export default function BriefsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -176,19 +178,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.54,
     color: colors.textLabel,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    backgroundColor: colors.track,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontFamily: fonts.heading,
-    fontSize: 13,
-    color: colors.ink,
   },
   title: {
     fontFamily: fonts.display,
@@ -224,7 +213,7 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     fontFamily: fonts.bodySemiBold,
-    color: colors.white,
+    color: colors.cream,
   },
   list: {
     gap: 9,
@@ -242,12 +231,12 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     lineHeight: 18.5,
     letterSpacing: -0.2,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   meta: {
     fontFamily: fonts.body,
     fontSize: 11.5,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
   pill: {
     paddingHorizontal: 13,
@@ -258,7 +247,7 @@ const styles = StyleSheet.create({
   pillText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   note: {
     backgroundColor: colors.field,

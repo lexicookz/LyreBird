@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, fonts, radius } from '../theme';
+import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
 
 const DESIGN_WIDTH = 402;
 
@@ -37,6 +37,7 @@ function FloatingTag({
   rotate: string;
   style: object;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={[styles.tag, { backgroundColor: color, transform: [{ rotate }] }, style]}>
       <Text style={styles.tagLabel}>{label}</Text>
@@ -51,6 +52,8 @@ export default function OpenerScreen({
   onStart: () => void;
   onSkip: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const { width } = useWindowDimensions();
   // The hero artwork is absolutely positioned, so scale it with the screen.
   const s = width / DESIGN_WIDTH;
@@ -126,10 +129,10 @@ export default function OpenerScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     flexGrow: 1,
@@ -147,7 +150,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     letterSpacing: 1.92,
-    color: '#7c7472',
+    color: colors.textEyebrow,
   },
   skip: {
     fontFamily: fonts.bodySemiBold,
@@ -171,7 +174,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: radius.pill,
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
     shadowRadius: 5,
@@ -180,7 +183,7 @@ const styles = StyleSheet.create({
   tagLabel: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 12.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   copy: {
     paddingHorizontal: 30,
@@ -198,7 +201,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 14.5,
     lineHeight: 21.75,
-    color: '#77706e',
+    color: colors.textMuted,
   },
   stages: {
     flexDirection: 'row',
@@ -220,7 +223,7 @@ const styles = StyleSheet.create({
   stageLabel: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 10.5,
-    color: '#6a6060',
+    color: colors.textMuted,
   },
   footer: {
     marginTop: 'auto',
@@ -247,14 +250,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.heading,
     fontSize: 17,
     letterSpacing: -0.34,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   ctaChevron: {
     width: 9,
     height: 9,
     borderTopWidth: 2.4,
     borderRightWidth: 2.4,
-    borderColor: colors.ink,
+    borderColor: colors.onPastel,
     transform: [{ rotate: '45deg' }],
   },
 });

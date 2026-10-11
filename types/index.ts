@@ -52,16 +52,37 @@ export type VideoFormat = 'talking_head' | 'voiceover' | 'text_overlay' | 'skit'
 // Declared as a type alias rather than an interface on purpose: interfaces have
 // no implicit index signature, so an interface here would not be assignable to
 // the generated `Json` type and TypedAnalysis would stop matching Analysis.
+/**
+ * Mirrors VideoAnalysis in pipeline/schema.py, which is the agreed contract
+ * (BE-12) and what the Gemini call returns. Change one and change the other in
+ * the same commit.
+ *
+ * Nullable fields come back as null rather than an invented string when the
+ * model genuinely cannot tell, so render them defensively.
+ */
+export type AudioStyle = {
+  backgroundMusic: string | null;
+  voiceover: string | null;
+};
+
 export type AnalysisPayload = {
   hook: string;
-  transcript: string;
-  onScreenText: string;
+  transcript: string | null;
+  onScreenText: string[];
+  /** Each entry is prefixed with its timestamp: 'MM:SS - what happens'. */
   shotBeats: string[];
-  pacing: string;
-  cta: string;
+  pacing: string | null;
+  cta: string | null;
+  /**
+   * Added in BE-12, so rows written by an earlier analysis run do not carry
+   * them. Optional here for that reason, not because a new run may omit them.
+   */
+  audioStyle?: AudioStyle;
+  whyItWorks?: string[];
   format: VideoFormat;
   funnelStage: FunnelStage;
-  formatTag?: FormatTag;
+  formatTag?: FormatTag | null;
+  description?: string;
 };
 
 /** An analysis row with its payload narrowed from `Json` to AnalysisPayload. */

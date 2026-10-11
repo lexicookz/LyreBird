@@ -16,7 +16,7 @@ import {
   parseISODate,
   toISODate,
 } from '../data/calendar';
-import { colors, fonts, FUNNEL_ORDER, funnelStages, radius } from '../theme';
+import { fonts, FUNNEL_ORDER, radius, Colors, useStyles, useTheme } from '../theme';
 import type { FunnelStage } from '../types';
 
 function longDate(iso: string) {
@@ -36,6 +36,7 @@ export default function ScheduleSheet({
   onSave,
   onRemove,
   onClose,
+  onSeeBrief,
 }: {
   visible: boolean;
   hook: string;
@@ -46,7 +47,11 @@ export default function ScheduleSheet({
   onSave: (values: Omit<CalendarItem, 'briefId'>) => void;
   onRemove: () => void;
   onClose: () => void;
+  /** Opens the brief itself. Left out when the sheet was opened from the brief. */
+  onSeeBrief?: () => void;
 }) {
+  const { stages } = useTheme();
+  const styles = useStyles(makeStyles);
   const [date, setDate] = useState(suggestedDate);
   const [stage, setStage] = useState<FunnelStage>(defaultStage);
   const [status, setStatus] = useState<CalendarStatus>('planned');
@@ -159,12 +164,12 @@ export default function ScheduleSheet({
           <Eyebrow>Stage</Eyebrow>
           <Pressable
             onPress={cycleStage}
-            style={[styles.stage, { backgroundColor: funnelStages[stage].color }]}
+            style={[styles.stage, { backgroundColor: stages[stage].color }]}
             accessibilityRole="button"
-            accessibilityLabel={`Stage, ${funnelStages[stage].label}. Tap to change.`}
+            accessibilityLabel={`Stage, ${stages[stage].label}. Tap to change.`}
           >
             <View style={styles.stageDot} />
-            <Text style={styles.selectText}>{funnelStages[stage].label}</Text>
+            <Text style={styles.stageText}>{stages[stage].label}</Text>
             <Text style={styles.stageHint}>Tap to change</Text>
           </Pressable>
         </View>
@@ -184,6 +189,15 @@ export default function ScheduleSheet({
         </View>
 
         <PrimaryButton label="Save schedule" onPress={() => onSave({ date, stage, status })} />
+        {onSeeBrief && (
+          <Pressable
+            onPress={onSeeBrief}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.seeBrief, pressed && { opacity: 0.8 }]}
+          >
+            <Text style={styles.seeBriefText}>See brief</Text>
+          </Pressable>
+        )}
         <Pressable onPress={existing ? onRemove : onClose} hitSlop={8} accessibilityRole="button" style={styles.secondary}>
           <Text style={styles.secondaryText}>
             {existing ? 'Remove from calendar' : 'Keep unscheduled instead'}
@@ -196,6 +210,7 @@ export default function ScheduleSheet({
 
 /** Status pill: ink when selected, grey otherwise (the design's status row). */
 function StatusChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const styles = useStyles(makeStyles);
   if (!selected) return <Chip label={label} onPress={onPress} />;
   return (
     <Pressable
@@ -209,7 +224,7 @@ function StatusChip({ label, selected, onPress }: { label: string; selected: boo
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   scroll: {
     maxHeight: 640,
   },
@@ -266,18 +281,18 @@ const styles = StyleSheet.create({
   suggestionIconText: {
     fontFamily: fonts.heading,
     fontSize: 12,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   suggestionTitle: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   suggestionBody: {
     fontFamily: fonts.body,
     fontSize: 11,
     lineHeight: 15.5,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
   field: {
     gap: 7,
@@ -291,7 +306,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: radius.field,
     borderWidth: 0.8,
-    borderColor: 'rgba(51,36,28,0.16)',
+    borderColor: colors.hairline,
   },
   selectText: {
     fontFamily: fonts.body,
@@ -342,11 +357,16 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: 'rgba(51,36,28,0.45)',
   },
+  stageText: {
+    fontFamily: fonts.body,
+    fontSize: 14.5,
+    color: colors.onPastel,
+  },
   stageHint: {
     marginLeft: 'auto',
     fontFamily: fonts.body,
     fontSize: 11,
-    color: colors.textBody,
+    color: colors.onPastelBody,
   },
   statusRow: {
     flexDirection: 'row',
@@ -363,6 +383,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
     color: colors.cream,
+  },
+  seeBrief: {
+    height: 50,
+    marginTop: 10,
+    borderRadius: radius.field,
+    borderWidth: 1.2,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seeBriefText: {
+    fontFamily: fonts.heading,
+    fontSize: 14.5,
+    color: colors.ink,
   },
   secondary: {
     alignSelf: 'center',
