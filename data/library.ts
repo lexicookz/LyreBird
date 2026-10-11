@@ -132,15 +132,39 @@ type UploadVideoInput = {
   fileName: string;
 };
 
+/**
+ * Where the analysis API lives.
+ *
+ * Set EXPO_PUBLIC_ANALYZE_API_URL in .env — see .env.example. This used to be
+ * a hardcoded LAN address, which meant the analysis only worked on the one
+ * machine it was written on and everyone else had to edit the file before
+ * running.
+ *
+ * The localhost default suits a simulator on the same machine. A real phone
+ * cannot reach localhost, so Expo Go needs the host machine's LAN address.
+ */
+const ANALYZE_API_URL = (
+  process.env.EXPO_PUBLIC_ANALYZE_API_URL ?? 'http://localhost:8000'
+).replace(/\/+$/, '');
+
 type AnalyzeVideoResponse = {
   status: string;
   data: AnalysisPayload;
+  /** What actually ran, reported by the server rather than guessed here. */
+  model_version: string;
+  prompt_version: string;
+};
+
+export type AnalyzeVideoResult = {
+  payload: AnalysisPayload;
+  modelVersion: string;
+  promptVersion: string;
 };
 
 
 export async function uploadToAnalyze(
   video: UploadVideoInput
-): Promise<AnalysisPayload> {
+): Promise<AnalyzeVideoResult> {
   const formData = new FormData();
   
   console.log('VIDEO INPUT', video);
@@ -154,10 +178,22 @@ export async function uploadToAnalyze(
   console.log('UPLOAD', video.uri); //to be removed
   console.log(JSON.stringify(video, null, 2)); //to be removed
 
-//// Replace with your local address before running.
-  const response = await fetch('http://172.21.151.175:8000/analyze-video',
-    { method: 'POST',
-      body: formData,});
+  let response: Response;
+  try {
+    response = await fetch(`${ANALYZE_API_URL}/analyze-video`, {
+      method: 'POST',
+      body: formData,
+    });
+  } catch {
+    // A bare fetch failure here reads as "Network request failed", which says
+    // nothing about the cause. Nine times out of ten it is this.
+    throw new Error(
+      `Could not reach the analysis API at ${ANALYZE_API_URL}. Set ` +
+        `EXPO_PUBLIC_ANALYZE_API_URL in .env to the machine running it — on a ` +
+        `phone that has to be the LAN address, not localhost.`
+    );
+  }
+
   if (!response.ok) {
     throw new Error(
       `Failed to upload video: ${response.status} ${response.statusText}`
@@ -167,14 +203,18 @@ export async function uploadToAnalyze(
   if (result.status !== 'success') {
     throw new Error(`Video analysis returned unexpected status: ${result.status}`);
   }
-  return result.data;
+  return {
+    payload: result.data,
+    modelVersion: result.model_version,
+    promptVersion: result.prompt_version,
+  };
 }
 
 export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: number): Promise<TypedAnalysis> {
   console.log('asset', asset);
   console.log('CALLING BACKEND', clip.id); // to be removed
   try {
-    const payload = await uploadToAnalyze({
+    const { payload, modelVersion, promptVersion } = await uploadToAnalyze({
       uri: asset.uri,
       fileName: asset.fileName || `${clip.id}.mp4`,
     } );
@@ -184,8 +224,11 @@ export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: 
       owner_id: clip.owner_id,
       clip_id: clip.id,
       payload,
-      model_version: 'gemini-3.8-flash',
-      prompt_version: 'v1',
+      // From the server. These were hardcoded to 'gemini-3.8-flash' and 'v1'
+      // while the endpoint defaults to prompt v2, so every analysis was
+      // recorded against a prompt that did not produce it.
+      model_version: modelVersion,
+      prompt_version: promptVersion,
       created_at: new Date().toISOString(),
     };
   } catch (error) {
