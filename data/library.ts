@@ -132,6 +132,21 @@ type UploadVideoInput = {
   fileName: string;
 };
 
+/**
+ * Where the analysis API lives.
+ *
+ * Set EXPO_PUBLIC_ANALYZE_API_URL in .env — see .env.example. This used to be
+ * a hardcoded LAN address, which meant the analysis only worked on the one
+ * machine it was written on and everyone else had to edit the file before
+ * running.
+ *
+ * The localhost default suits a simulator on the same machine. A real phone
+ * cannot reach localhost, so Expo Go needs the host machine's LAN address.
+ */
+const ANALYZE_API_URL = (
+  process.env.EXPO_PUBLIC_ANALYZE_API_URL ?? 'http://localhost:8000'
+).replace(/\/+$/, '');
+
 type AnalyzeVideoResponse = {
   status: string;
   data: AnalysisPayload;
@@ -163,10 +178,22 @@ export async function uploadToAnalyze(
   console.log('UPLOAD', video.uri); //to be removed
   console.log(JSON.stringify(video, null, 2)); //to be removed
 
-//// Replace with your local address before running.
-  const response = await fetch('http://172.21.151.175:8000/analyze-video',
-    { method: 'POST',
-      body: formData,});
+  let response: Response;
+  try {
+    response = await fetch(`${ANALYZE_API_URL}/analyze-video`, {
+      method: 'POST',
+      body: formData,
+    });
+  } catch {
+    // A bare fetch failure here reads as "Network request failed", which says
+    // nothing about the cause. Nine times out of ten it is this.
+    throw new Error(
+      `Could not reach the analysis API at ${ANALYZE_API_URL}. Set ` +
+        `EXPO_PUBLIC_ANALYZE_API_URL in .env to the machine running it — on a ` +
+        `phone that has to be the LAN address, not localhost.`
+    );
+  }
+
   if (!response.ok) {
     throw new Error(
       `Failed to upload video: ${response.status} ${response.statusText}`
