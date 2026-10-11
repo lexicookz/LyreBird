@@ -68,6 +68,44 @@ describe('brandColorOf', () => {
   });
 });
 
+// Real Supabase auth needs a server, which a test runner has no business
+// reaching. These tests are about App's wiring -- sign up leads to brand
+// setup, sign out returns to log in -- so the account module is replaced by
+// an AsyncStorage-backed stand-in with the same surface. Whether
+// signInWithPassword is called correctly is a different question, and not
+// one this suite can answer.
+jest.mock('../data/account', () => {
+  const KEY = 'lyrebird.account';
+  // Resolved per call, not at factory time: the AsyncStorage mock from
+  // jest.setup is not in place yet while this factory runs.
+  const store = () => {
+    const mod = require('@react-native-async-storage/async-storage');
+    return mod.default ?? mod;
+  };
+  return {
+    MIN_PASSWORD_LENGTH: 6,
+    AuthError: class AuthError extends Error {},
+    isValidEmail: (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()),
+    loadAccount: async () => {
+      const raw = await store().getItem(KEY);
+      return raw ? JSON.parse(raw) : null;
+    },
+    signIn: async (email: string) => {
+      const account = { email: email.trim().toLowerCase() };
+      await store().setItem(KEY, JSON.stringify(account));
+      return account;
+    },
+    signUp: async (email: string) => {
+      const account = { email: email.trim().toLowerCase() };
+      await store().setItem(KEY, JSON.stringify(account));
+      return account;
+    },
+    signOut: async () => {
+      await store().removeItem(KEY);
+    },
+  };
+});
+
 jest.mock('expo-image-picker', () => ({
   getMediaLibraryPermissionsAsync: jest.fn(async () => ({
     granted: false,
