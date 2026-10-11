@@ -14,3 +14,9 @@ pydantic==2.13.5
 pydantic-settings==2.15.0
 python-multipart==0.0.32
 httpx==0.28.1
+
+# Needed by pipeline/cache.py, which the worker imports for analysis caching.
+# It was already present as a transitive dependency, so the image happened to
+# build -- but an unpinned transitive is exactly the rebuild that breaks for
+# no visible reason. Declared because the worker genuinely depends on it.
+python-dotenv==1.2.4
