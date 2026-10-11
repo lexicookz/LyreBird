@@ -135,12 +135,21 @@ type UploadVideoInput = {
 type AnalyzeVideoResponse = {
   status: string;
   data: AnalysisPayload;
+  /** What actually ran, reported by the server rather than guessed here. */
+  model_version: string;
+  prompt_version: string;
+};
+
+export type AnalyzeVideoResult = {
+  payload: AnalysisPayload;
+  modelVersion: string;
+  promptVersion: string;
 };
 
 
 export async function uploadToAnalyze(
   video: UploadVideoInput
-): Promise<AnalysisPayload> {
+): Promise<AnalyzeVideoResult> {
   const formData = new FormData();
   
   console.log('VIDEO INPUT', video);
@@ -167,14 +176,18 @@ export async function uploadToAnalyze(
   if (result.status !== 'success') {
     throw new Error(`Video analysis returned unexpected status: ${result.status}`);
   }
-  return result.data;
+  return {
+    payload: result.data,
+    modelVersion: result.model_version,
+    promptVersion: result.prompt_version,
+  };
 }
 
 export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: number): Promise<TypedAnalysis> {
   console.log('asset', asset);
   console.log('CALLING BACKEND', clip.id); // to be removed
   try {
-    const payload = await uploadToAnalyze({
+    const { payload, modelVersion, promptVersion } = await uploadToAnalyze({
       uri: asset.uri,
       fileName: asset.fileName || `${clip.id}.mp4`,
     } );
@@ -184,8 +197,11 @@ export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: 
       owner_id: clip.owner_id,
       clip_id: clip.id,
       payload,
-      model_version: 'gemini-3.8-flash',
-      prompt_version: 'v1',
+      // From the server. These were hardcoded to 'gemini-3.8-flash' and 'v1'
+      // while the endpoint defaults to prompt v2, so every analysis was
+      // recorded against a prompt that did not produce it.
+      model_version: modelVersion,
+      prompt_version: promptVersion,
       created_at: new Date().toISOString(),
     };
   } catch (error) {
