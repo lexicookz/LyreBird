@@ -15,10 +15,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { BackButton, Eyebrow } from '../components/ui';
-import { BriefEdit, shotsOf } from '../data/briefs';
+import { BriefEdit, briefAsText, shotsOf } from '../data/briefs';
 import { CALENDAR_STATUSES, CalendarItem } from '../data/calendar';
-import { colors, fonts, pagePadding, radius } from '../theme';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Brief, Clip } from '../types';
 
 function comingSoon() {
@@ -34,19 +35,6 @@ function formatDuration(seconds: number | null | undefined) {
   if (!seconds) return null;
   const s = Math.round(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-/** The brief as plain text, for sharing to notes, email or a teammate. */
-function briefAsText(brief: Brief, shots: string[]) {
-  return [
-    `HOOK\n${brief.hook ?? ''}`,
-    shots.length ? `SHOT LIST\n${shots.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : null,
-    brief.script ? `SCRIPT\n${brief.script}` : null,
-    brief.caption ? `CAPTION\n${brief.caption}` : null,
-    brief.cta ? `CTA\n${brief.cta}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
 }
 
 export default function BriefScreen({
@@ -67,6 +55,8 @@ export default function BriefScreen({
   onBack: () => void;
   onSchedule: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   // Shots are kept locally so an empty row (just added) survives until typed in.
   const [shots, setShots] = useState<string[]>(() => shotsOf(brief));
 
@@ -101,13 +91,13 @@ export default function BriefScreen({
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.green, gap: 10 }]}>
-            <Eyebrow color={colors.textBody}>Hook line</Eyebrow>
+            <Eyebrow color={colors.onPastelBody}>Hook line</Eyebrow>
             <TextInput
               defaultValue={brief.hook ?? ''}
               onChangeText={(hook) => onEdit({ hook })}
               multiline
               placeholder="Write the first line people hear"
-              placeholderTextColor={colors.textBody}
+              placeholderTextColor={colors.onPastelBody}
               accessibilityLabel="Hook line"
               style={styles.hookInput}
             />
@@ -170,15 +160,15 @@ export default function BriefScreen({
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.pink, gap: 10 }]}>
-            <Eyebrow color={colors.textBody}>{'Caption & CTA'}</Eyebrow>
+            <Eyebrow color={colors.onPastelBody}>{'Caption & CTA'}</Eyebrow>
             <TextInput
               defaultValue={brief.caption ?? ''}
               onChangeText={(caption) => onEdit({ caption })}
               multiline
               placeholder="Write the caption"
-              placeholderTextColor={colors.textBody}
+              placeholderTextColor={colors.onPastelBody}
               accessibilityLabel="Caption"
-              style={styles.bodyInput}
+              style={styles.pastelInput}
             />
             <View style={styles.ctaRow}>
               <Text style={styles.ctaLabel}>CTA</Text>
@@ -186,7 +176,7 @@ export default function BriefScreen({
                 defaultValue={brief.cta ?? ''}
                 onChangeText={(cta) => onEdit({ cta })}
                 placeholder="What should viewers do?"
-                placeholderTextColor={colors.textBody}
+                placeholderTextColor={colors.onPastelBody}
                 accessibilityLabel="Call to action"
                 style={styles.ctaInput}
               />
@@ -212,12 +202,12 @@ export default function BriefScreen({
             <Text style={styles.scheduleText}>{entry ? 'Reschedule' : 'Schedule'}</Text>
           </Pressable>
           <Pressable
-            onPress={() => Share.share({ message: briefAsText(brief, filledShots) })}
+            onPress={() => Share.share({ message: briefAsText({ ...brief, shot_list: filledShots }) })}
             accessibilityRole="button"
             accessibilityLabel="Share brief"
             style={styles.share}
           >
-            <View style={styles.shareIcon} />
+            <Ionicons name="share-outline" size={21} color={colors.ink} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -225,10 +215,10 @@ export default function BriefScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   scroll: {
     paddingHorizontal: pagePadding,
@@ -270,7 +260,7 @@ const styles = StyleSheet.create({
     fontSize: 19,
     lineHeight: 24,
     letterSpacing: -0.4,
-    color: colors.ink,
+    color: colors.onPastel,
     padding: 0,
   },
   pillRow: {
@@ -287,7 +277,7 @@ const styles = StyleSheet.create({
   framePillText: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -314,7 +304,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     borderTopWidth: StyleSheet.hairlineWidth * 2,
-    borderTopColor: 'rgba(51,36,28,0.07)',
+    borderTopColor: colors.divider,
   },
   shotIndex: {
     width: 22,
@@ -346,6 +336,15 @@ const styles = StyleSheet.create({
     minHeight: 40,
     textAlignVertical: 'top',
   },
+  pastelInput: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.onPastel,
+    padding: 0,
+    minHeight: 40,
+    textAlignVertical: 'top',
+  },
   ctaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -358,13 +357,13 @@ const styles = StyleSheet.create({
   ctaLabel: {
     fontFamily: fonts.bodySemiBold,
     fontSize: 11.5,
-    color: colors.ink,
+    color: colors.onPastel,
   },
   ctaInput: {
     flex: 1,
     fontFamily: fonts.body,
     fontSize: 12.5,
-    color: colors.ink,
+    color: colors.onPastel,
     padding: 0,
   },
   footer: {
@@ -391,20 +390,13 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 3,
-  },
-  shareIcon: {
-    width: 17,
-    height: 17,
-    borderRadius: 3,
-    borderWidth: 1.8,
-    borderColor: colors.ink,
   },
 });

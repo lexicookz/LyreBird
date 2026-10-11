@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ImagePickerAsset } from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { mockAnalyses, mockClips } from './mockVideos';
 import type { AnalysisPayload, Clip, TypedAnalysis } from '../types';
 
@@ -26,7 +27,7 @@ const STORAGE_KEY = 'lyrebird.library';
 const OWNER_ID = mockClips[0]?.owner_id ?? 'local';
 
 /** How long a simulated analysis takes. */
-export const ANALYSIS_MS = 6000;
+
 /** Clips longer than this are skipped at import. */
 export const MAX_CLIP_SECONDS = 90;
 
@@ -37,7 +38,7 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
   {
     hook: 'I wasted $4k on skincare so you don’t have to',
     transcript: 'I wasted four thousand dollars on skincare so you don’t have to…',
-    onScreenText: '$4,000 later',
+    onScreenText: ['$4,000 later'],
     shotBeats: ['Handheld close-up, direct address', 'Cut to shelf of products', 'Three fast product holds', 'Back to face, spoken CTA'],
     pacing: 'Fast cuts for the first 10 seconds, then slows for the CTA',
     cta: 'Spoken, not shown',
@@ -47,7 +48,7 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
   {
     hook: 'Three things I check before I buy',
     transcript: 'Three things I check before I buy anything for my skin…',
-    onScreenText: '1. Ingredients 2. Bottle 3. Refills',
+    onScreenText: ['1. Ingredients 2. Bottle 3. Refills'],
     shotBeats: ['Product on bench', 'Close-up of label', 'Pour test', 'Verdict to camera'],
     pacing: 'Even, one beat per point',
     cta: 'Comment which one you check',
@@ -57,7 +58,7 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
   {
     hook: 'Last day at this price',
     transcript: 'This is the last day you can get it at this price…',
-    onScreenText: 'Ends tonight',
+    onScreenText: ['Ends tonight'],
     shotBeats: ['Price card', 'Product in hand', 'Checkout screen'],
     pacing: 'Quick, under 15 seconds',
     cta: 'Link in bio, shown on screen',
@@ -110,6 +111,7 @@ export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): C
     return {
       id: newId(),
       owner_id: OWNER_ID,
+      //local_uri: asset.uri,
       recording_id: null,
       // Not uploaded yet: there is no bucket path until the upload step exists.
       storage_path: `local/${asset.fileName ?? name}`,
@@ -125,41 +127,150 @@ export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): C
     };
   });
 }
+type UploadVideoInput = {
+  uri: string;
+  fileName: string;
+};
 
-/** Simulated analysis result for a clip (see the note at the top). */
-export function finishAnalysis(clip: Clip, index: number): TypedAnalysis {
-  const payload = SAMPLE_PAYLOADS[index % SAMPLE_PAYLOADS.length];
+/**
+ * Where the worker lives.
+ *
+ * Set EXPO_PUBLIC_WORKER_URL in .env — see .env.example. This used to be
+ * a hardcoded LAN address, which meant the analysis only worked on the one
+ * machine it was written on and everyone else had to edit the file before
+ * running.
+ *
+ * The localhost default suits a simulator on the same machine. A real phone
+ * cannot reach localhost, so Expo Go needs the host machine's LAN address.
+ */
+const WORKER_URL = (
+  process.env.EXPO_PUBLIC_WORKER_URL ?? 'http://localhost:8000'
+).replace(/\/+$/, '');
+
+// The worker, not the pipeline API. The pipeline runs on a developer's
+// machine; the worker is the service that actually gets deployed, holds the
+// Gemini key, and carries the retry and prompt-versioning behaviour.
+const ANALYSE_PATH = '/clips/analyse-upload';
+
+type AnalyzeVideoResponse = {
+  status: string;
+  data: AnalysisPayload;
+  /** What actually ran, reported by the server rather than guessed here. */
+  model_version: string;
+  prompt_version: string;
+};
+
+export type AnalyzeVideoResult = {
+  payload: AnalysisPayload;
+  modelVersion: string;
+  promptVersion: string;
+};
+
+
+export async function uploadToAnalyze(
+  video: UploadVideoInput
+): Promise<AnalyzeVideoResult> {
+  const formData = new FormData();
+  
+  console.log('VIDEO INPUT', video);
+  console.log('URI', video.uri);
+  console.log('FILENAME', video.fileName);
+  console.log('upload video', video);
+  const file = new File(video.uri);
+  Object.defineProperty(file, 'name', { value: video.fileName });
+  formData.append('file', file);
+
+  console.log('UPLOAD', video.uri); //to be removed
+  console.log(JSON.stringify(video, null, 2)); //to be removed
+
+  let response: Response;
+  try {
+    response = await fetch(`${WORKER_URL}${ANALYSE_PATH}`, {
+      method: 'POST',
+      body: formData,
+    });
+  } catch {
+    // A bare fetch failure here reads as "Network request failed", which says
+    // nothing about the cause. Nine times out of ten it is this.
+    throw new Error(
+      `Could not reach the worker at ${WORKER_URL}. Set ` +
+        `EXPO_PUBLIC_WORKER_URL in .env to where it is running — on a phone ` +
+        `that has to be a LAN address or the deployed URL, not localhost.`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to upload video: ${response.status} ${response.statusText}`
+    );
+  }
+  const result = (await response.json()) as AnalyzeVideoResponse;
+  if (result.status !== 'success') {
+    throw new Error(`Video analysis returned unexpected status: ${result.status}`);
+  }
   return {
-    id: newId(),
-    owner_id: clip.owner_id,
-    clip_id: clip.id,
-    payload,
-    model_version: 'simulated',
-    prompt_version: 'simulated',
-    created_at: new Date().toISOString(),
+    payload: result.data,
+    modelVersion: result.model_version,
+    promptVersion: result.prompt_version,
   };
 }
 
-/** 0-1 progress of a processing clip's simulated analysis. */
-export function analysisProgress(clip: Clip, now = Date.now()) {
-  const started = Date.parse(clip.updated_at);
-  return Math.min(1, Math.max(0, (now - started) / ANALYSIS_MS));
+export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: number): Promise<TypedAnalysis> {
+  console.log('asset', asset);
+  console.log('CALLING BACKEND', clip.id); // to be removed
+  try {
+    const { payload, modelVersion, promptVersion } = await uploadToAnalyze({
+      uri: asset.uri,
+      fileName: asset.fileName || `${clip.id}.mp4`,
+    } );
+
+    return {
+      id: newId(),
+      owner_id: clip.owner_id,
+      clip_id: clip.id,
+      payload,
+      // From the server. These were hardcoded to 'gemini-3.8-flash' and 'v1'
+      // while the endpoint defaults to prompt v2, so every analysis was
+      // recorded against a prompt that did not produce it.
+      model_version: modelVersion,
+      prompt_version: promptVersion,
+      created_at: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error(
+      `Analysis failed for clip ${clip.id}:`,
+      error
+    );
+
+    throw error;
+  }
 }
 
 // ---------- hook ----------
+export const ANALYSIS_MS = 6000;
+
+export function analysisProgress(
+  clip: Clip,
+  now = Date.now()
+) {
+  const started = Date.parse(clip.updated_at);
+
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      (now - started) / ANALYSIS_MS
+    )
+  );
+}
+
 
 export function useLibrary() {
   const [state, setState] = useState<LibraryState>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
   const completed = useRef(0);
-
-  useEffect(() => {
-    loadLibrary().then((stored) => {
-      setState(stored);
-      setLoaded(true);
-    });
-  }, []);
+  const assetMap = useRef<Record<string, ImagePickerAsset>>({});
 
   const update = useCallback((fn: (s: LibraryState) => LibraryState) => {
     setState((current) => {
@@ -169,41 +280,78 @@ export function useLibrary() {
     });
   }, []);
 
-  const processing = state.clips.filter((c) => c.status === 'processing');
+  const runAnalysis = useCallback( 
+    async (clip: Clip) => {
+      console.log('RUN ANALYSIS START', clip.id); //to be removed
+    const asset = assetMap.current[clip.id];
+    if (!asset) {return;}
+    try {
+      const analysis = await finishAnalysis(clip, asset, completed.current++);
 
-  // While anything is analysing, tick so progress bars move, and finish clips
-  // whose time is up.
-  useEffect(() => {
-    if (!loaded || processing.length === 0) return;
-    const timer = setInterval(() => {
-      const t = Date.now();
-      setNow(t);
-      const due = processing.filter((c) => analysisProgress(c, t) >= 1);
-      if (due.length === 0) return;
-      update((s) => {
-        const dueIds = new Set(due.map((c) => c.id));
-        const newAnalyses = due.map((c) => finishAnalysis(c, completed.current++));
-        return {
-          ...s,
-          clips: s.clips.map((c) =>
-            dueIds.has(c.id)
-              ? { ...c, status: 'ready', updated_at: new Date(t).toISOString() }
-              : c
+      update((s) => ({
+        ...s,
+        clips: s.clips.map((c) =>
+          c.id === clip.id
+            ? {
+                ...c,
+                status: 'ready',
+                updated_at: new Date().toISOString(),
+              }
+            : c
+        ),
+        analyses: [
+          ...s.analyses.filter(
+            (a) => a.clip_id !== clip.id
           ),
-          analyses: [...s.analyses.filter((a) => !dueIds.has(a.clip_id)), ...newAnalyses],
-        };
-      });
-    }, 250);
-    return () => clearInterval(timer);
-  }, [loaded, processing.map((c) => c.id).join(','), update]);
+          analysis,
+        ],
+      }));
+    } catch {
+       update((s) => ({
+        ...s,
+        clips: s.clips.map((c) =>
+          c.id === clip.id
+            ? {
+              ...c,
+              status: 'failed',
+              updated_at: new Date().toISOString(),
+              }
+            : c
+        ),
+      }));
+    }
+  },
+  [update]
+);
+``
+  useEffect(() => {
+    loadLibrary().then((stored) => {
+      setState(stored);
+      setLoaded(true);
+    });
+  }, []);
+
+  
+
+
 
   const importVideos = useCallback(
-    (assets: ImagePickerAsset[]) => {
-      const clips = clipsFromAssets(assets);
-      update((s) => ({ ...s, clips: [...clips, ...s.clips], lastImportCount: clips.length }));
-    },
-    [update]
-  );
+    async (assets: ImagePickerAsset[]) => {
+    const clips = clipsFromAssets(assets);
+    clips.forEach((clip, i) => {
+      assetMap.current[clip.id] = assets[i];
+    });
+    update((s) => ({
+      ...s,
+      clips: [...clips, ...s.clips],
+      lastImportCount: clips.length,
+    }));
+    clips.forEach((clip) => {
+      runAnalysis(clip);
+    });
+  },
+  [update, runAnalysis]
+);
 
   const loadSamples = useCallback(() => update(() => sampleLibrary()), [update]);
 
@@ -220,7 +368,18 @@ export function useLibrary() {
     [update]
   );
 
-  return { ...state, loaded, now, importVideos, loadSamples, retryAnalysis };
+  /** Removes a clip and its analysis. Briefs written from it are kept. */
+  const removeClip = useCallback(
+    (clipId: string) =>
+      update((s) => ({
+        ...s,
+        clips: s.clips.filter((c) => c.id !== clipId),
+        analyses: s.analyses.filter((a) => a.clip_id !== clipId),
+      })),
+    [update]
+  );
+
+  return { ...state, loaded, now, importVideos, loadSamples, retryAnalysis, removeClip };
 }
 
 export type Library = ReturnType<typeof useLibrary>;

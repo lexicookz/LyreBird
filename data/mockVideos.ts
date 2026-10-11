@@ -152,7 +152,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       hook: "I used to hit snooze 5 times. Here's what fixed it.",
       transcript:
         'So I used to be the person who hit snooze five times every morning...',
-      onScreenText: '5 SNOOZES → 0',
+      onScreenText: ['5 SNOOZES → 0'],
       shotBeats: [
         'Close up: alarm clock',
         'Cut to: making bed',
@@ -175,7 +175,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       hook: 'Your welcome email has a 3-second window. Most brands waste it.',
       transcript:
         "Let's talk about the one email almost every SaaS company gets wrong...",
-      onScreenText: "3 SECONDS. THAT'S IT.",
+      onScreenText: ["3 SECONDS. THAT'S IT."],
       shotBeats: [
         'Screen recording: inbox',
         'Text overlay: stat callout',
@@ -198,7 +198,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       hook: "10 minutes. That's all it takes if you use this structure.",
       transcript:
         'Every ad script I write follows the same five-part structure...',
-      onScreenText: 'HOOK → PROBLEM → AGITATE → SOLUTION → CTA',
+      onScreenText: ['HOOK → PROBLEM → AGITATE → SOLUTION → CTA'],
       shotBeats: [
         'Talking head intro',
         'Screen recording: notes app',
