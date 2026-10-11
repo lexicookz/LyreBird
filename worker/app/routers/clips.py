@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import json
-import shutil
 import tempfile
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.config import settings
 from app.db import get_client
-from app.analysis_cache import analysis_cache_key, compute_video_hash, get_cached_analysis, set_cached_analysis
-from app.gemini import PROMPT_NAME, GeminiError, GeminiTimeout, analyse, delete_file, upload_and_wait
-from app.prompts import PromptError, load as load_prompt, load_latest as load_latest_prompt, versions
+from app.gemini import GeminiError, GeminiTimeout, analyse, delete_file, upload_and_wait
+from app.prompts import PromptError, load as load_prompt, versions
 from app.media import MediaError, downscale_to_480p, extract_thumbnail, probe_duration_seconds
 from app.models import Clip
 
@@ -325,95 +322,3 @@ def analyse_clip(
 def list_prompt_versions() -> list[str]:
     """Every analysis prompt version available to re-run, oldest first."""
     return versions("analyse")
-
-
-class AnalyseUploadResult(BaseModel):
-    """Deliberately the same shape pipeline/api.py returned, so the app only
-    had to change the address it calls rather than how it reads the reply."""
-
-    status: str
-    data: dict
-    model_version: str
-    prompt_version: str
-    cached: bool
-
-
-@router.post("/analyse-upload", response_model=AnalyseUploadResult)
-def analyse_upload(
-    file: UploadFile = File(...),
-    prompt_version: str | None = Query(
-        default=None,
-        description="Run a specific analysis prompt version. Defaults to the latest.",
-    ),
-) -> AnalyseUploadResult:
-    """Analyse an uploaded video without storing anything.
-
-    TRANSITIONAL. The real path is POST /clips/{id}/analyse, which reads the
-    clip from Supabase and writes an analyses row against its owner. The app
-    cannot use that yet: it has no Supabase client and keeps clips in
-    AsyncStorage, so there is no row to reference and no owner to attribute
-    the analysis to.
-
-    This exists so the app talks to the service we actually deploy instead of
-    a second FastAPI app on someone's laptop. When BE-09 lands and the app has
-    auth and uploads to storage, this endpoint goes away -- nothing it does is
-    persisted, so nothing depends on it.
-    """
-    if prompt_version is not None:
-        try:
-            load_prompt(prompt_version)
-        except PromptError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    uploaded_name: str | None = None
-    with tempfile.TemporaryDirectory(prefix="lyrebird-analyse-upload-") as tmp:
-        source = Path(tmp) / (file.filename or "upload.mp4")
-        with source.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Analysing a video costs a real API call and a minute, so the same
-        # file is not analysed twice. Keyed on the file's content and the
-        # prompt that would run, because a new prompt is a different question
-        # and must not be answered from an old reply.
-        prompt_text, resolved_version = (
-            load_prompt(prompt_version) if prompt_version else load_latest_prompt(PROMPT_NAME)
-        )
-        cache_key = analysis_cache_key(compute_video_hash(str(source)), prompt_text)
-
-        cached = get_cached_analysis(cache_key)
-        if cached is not None:
-            payload = cached if isinstance(cached, dict) else json.loads(cached)
-            return AnalyseUploadResult(
-                status="success",
-                data=payload,
-                model_version=settings.gemini_model,
-                prompt_version=resolved_version,
-                cached=True,
-            )
-
-        try:
-            gemini_file = upload_and_wait(source)
-            uploaded_name = gemini_file.name
-            result, used_version = analyse(gemini_file, prompt_version)
-        except GeminiTimeout as exc:
-            raise HTTPException(status_code=504, detail=str(exc)) from exc
-        except GeminiError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        finally:
-            if uploaded_name:
-                delete_file(uploaded_name)
-
-    payload = result.model_dump(mode="json")
-    try:
-        set_cached_analysis(cache_key, payload)
-    except Exception:
-        # A cache that cannot be written is not a failed analysis.
-        pass
-
-    return AnalyseUploadResult(
-        status="success",
-        data=payload,
-        model_version=settings.gemini_model,
-        prompt_version=used_version,
-        cached=False,
-    )
