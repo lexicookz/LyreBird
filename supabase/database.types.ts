@@ -281,6 +281,7 @@ export type Database = {
         Row: {
           created_at: string
           duration_seconds: number | null
+          error_message: string | null
           id: string
           owner_id: string
           position_in_parent: number | null
@@ -296,6 +297,7 @@ export type Database = {
         Insert: {
           created_at?: string
           duration_seconds?: number | null
+          error_message?: string | null
           id?: string
           owner_id: string
           position_in_parent?: number | null
@@ -311,6 +313,7 @@ export type Database = {
         Update: {
           created_at?: string
           duration_seconds?: number | null
+          error_message?: string | null
           id?: string
           owner_id?: string
           position_in_parent?: number | null
