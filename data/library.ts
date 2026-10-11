@@ -133,9 +133,9 @@ type UploadVideoInput = {
 };
 
 /**
- * Where the analysis API lives.
+ * Where the worker lives.
  *
- * Set EXPO_PUBLIC_ANALYZE_API_URL in .env — see .env.example. This used to be
+ * Set EXPO_PUBLIC_WORKER_URL in .env — see .env.example. This used to be
  * a hardcoded LAN address, which meant the analysis only worked on the one
  * machine it was written on and everyone else had to edit the file before
  * running.
@@ -143,9 +143,14 @@ type UploadVideoInput = {
  * The localhost default suits a simulator on the same machine. A real phone
  * cannot reach localhost, so Expo Go needs the host machine's LAN address.
  */
-const ANALYZE_API_URL = (
-  process.env.EXPO_PUBLIC_ANALYZE_API_URL ?? 'http://localhost:8000'
+const WORKER_URL = (
+  process.env.EXPO_PUBLIC_WORKER_URL ?? 'http://localhost:8000'
 ).replace(/\/+$/, '');
+
+// The worker, not the pipeline API. The pipeline runs on a developer's
+// machine; the worker is the service that actually gets deployed, holds the
+// Gemini key, and carries the retry and prompt-versioning behaviour.
+const ANALYSE_PATH = '/clips/analyse-upload';
 
 type AnalyzeVideoResponse = {
   status: string;
@@ -180,7 +185,7 @@ export async function uploadToAnalyze(
 
   let response: Response;
   try {
-    response = await fetch(`${ANALYZE_API_URL}/analyze-video`, {
+    response = await fetch(`${WORKER_URL}${ANALYSE_PATH}`, {
       method: 'POST',
       body: formData,
     });
@@ -188,9 +193,9 @@ export async function uploadToAnalyze(
     // A bare fetch failure here reads as "Network request failed", which says
     // nothing about the cause. Nine times out of ten it is this.
     throw new Error(
-      `Could not reach the analysis API at ${ANALYZE_API_URL}. Set ` +
-        `EXPO_PUBLIC_ANALYZE_API_URL in .env to the machine running it — on a ` +
-        `phone that has to be the LAN address, not localhost.`
+      `Could not reach the worker at ${WORKER_URL}. Set ` +
+        `EXPO_PUBLIC_WORKER_URL in .env to where it is running — on a phone ` +
+        `that has to be a LAN address or the deployed URL, not localhost.`
     );
   }
 

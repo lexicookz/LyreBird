@@ -360,3 +360,95 @@ def test_prepare_succeeds_when_original_file_cannot_be_deleted(monkeypatch):
     assert body["duration_seconds"] == 12.5
     assert body["original_deleted"] is False
     assert body["already_prepared"] is False
+
+# ---------------------------------------------------------------- analyse-upload
+# The transitional endpoint the app calls until it has auth and Supabase
+# uploads. Nothing is persisted, so these cover the contract the app parses
+# and the cache that keeps a repeat import from costing another API call.
+
+
+def _analysis_payload():
+    return {
+        "hook": "Stop scrolling.",
+        "transcript": None,
+        "onScreenText": ["DAY 1"],
+        "shotBeats": ["00:00 - close-up hook"],
+        "pacing": "fast",
+        "audioStyle": {"backgroundMusic": None, "voiceover": "calm"},
+        "cta": "Follow",
+        "whyItWorks": ["opens on a number"],
+        "format": "talking_head",
+        "funnelStage": "TOFU",
+        "formatTag": None,
+        "description": "A short test clip.",
+    }
+
+
+def _stub_gemini(monkeypatch, calls):
+    from app.analysis import AnalysisResult
+
+    monkeypatch.setattr(clips, "upload_and_wait", lambda path: SimpleNamespace(name="files/x"))
+    monkeypatch.setattr(clips, "delete_file", lambda name: None)
+
+    def fake_analyse(_file, prompt_version=None):
+        calls.append(prompt_version)
+        return AnalysisResult.model_validate(_analysis_payload()), prompt_version or "analyse-v2"
+
+    monkeypatch.setattr(clips, "analyse", fake_analyse)
+
+
+def test_analyse_upload_returns_the_shape_the_app_parses(monkeypatch, tmp_path):
+    calls: list = []
+    _stub_gemini(monkeypatch, calls)
+    monkeypatch.setattr(clips, "get_cached_analysis", lambda key: None)
+    monkeypatch.setattr(clips, "set_cached_analysis", lambda key, value: None)
+
+    response = client.post(
+        "/clips/analyse-upload",
+        files={"file": ("clip.mp4", b"not a real video", "video/mp4")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    # data must be an OBJECT -- returning it as a JSON string is the bug the
+    # app hit against the pipeline API.
+    assert isinstance(body["data"], dict)
+    assert body["data"]["hook"] == "Stop scrolling."
+    assert body["data"]["onScreenText"] == ["DAY 1"]
+    assert body["model_version"]
+    assert body["prompt_version"] == "analyse-v2"
+    assert body["cached"] is False
+    assert len(calls) == 1
+
+
+def test_analyse_upload_serves_a_repeat_from_cache_without_calling_gemini(monkeypatch):
+    calls: list = []
+    _stub_gemini(monkeypatch, calls)
+    monkeypatch.setattr(clips, "get_cached_analysis", lambda key: _analysis_payload())
+
+    response = client.post(
+        "/clips/analyse-upload",
+        files={"file": ("clip.mp4", b"not a real video", "video/mp4")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cached"] is True
+    assert body["data"]["hook"] == "Stop scrolling."
+    # The whole point: a cache hit must not spend an API call.
+    assert calls == []
+
+
+def test_analyse_upload_rejects_an_unknown_prompt_version(monkeypatch):
+    calls: list = []
+    _stub_gemini(monkeypatch, calls)
+
+    response = client.post(
+        "/clips/analyse-upload?prompt_version=analyse-v99",
+        files={"file": ("clip.mp4", b"x", "video/mp4")},
+    )
+
+    assert response.status_code == 400
+    # Rejected before anything was uploaded or analysed.
+    assert calls == []
