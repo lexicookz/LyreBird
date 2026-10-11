@@ -20,23 +20,95 @@ const WORKER_URL = (
   process.env.EXPO_PUBLIC_WORKER_URL ?? 'http://localhost:8000'
 ).replace(/\/+$/, '');
 
+/** How many clips a page of the library holds. */
+export const LIBRARY_PAGE_SIZE = 24;
+
+export type LibrarySort = 'newest' | 'oldest';
+
+export type LibraryQuery = {
+  /** Clips carrying every one of these tags. Empty or absent means no filter. */
+  tags?: string[];
+  sort?: LibrarySort;
+  /** Which page, zero-based. */
+  page?: number;
+  pageSize?: number;
+};
+
+export type LibraryPage = {
+  clips: Clip[];
+  analyses: Analysis[];
+  /** Whether another page exists, so the screen knows to keep offering more. */
+  hasMore: boolean;
+  /** Total matching the filter, which is not the number returned. */
+  total: number;
+};
+
 /**
- * Every clip and analysis the signed-in user can see.
+ * One page of the signed-in user's library.
+ *
+ * Filtering, sorting and paging all happen in Postgres rather than in the
+ * app: `tags` uses the gin index the schema already carries
+ * (clips_tags_idx), so it stays fast as the library grows, and the app never
+ * downloads rows it is not going to show.
  *
  * Deliberately no `owner_id` filter. RLS already returns only this user's
  * rows, and adding one here would suggest the database might hand back
  * someone else's -- which is the thing the policies exist to make impossible.
+ *
+ * Analyses are fetched for the clips on this page only. Loading all of them
+ * to display twenty-four would undo the point of paging.
  */
-export async function fetchLibrary(): Promise<{ clips: Clip[]; analyses: Analysis[] }> {
-  const [clips, analyses] = await Promise.all([
-    supabase.from('clips').select('*').order('created_at', { ascending: false }),
-    supabase.from('analyses').select('*').order('created_at', { ascending: false }),
-  ]);
+export async function fetchLibrary(query: LibraryQuery = {}): Promise<LibraryPage> {
+  const pageSize = query.pageSize ?? LIBRARY_PAGE_SIZE;
+  const page = query.page ?? 0;
+  const from = page * pageSize;
 
-  if (clips.error) throw new Error(`Could not load your clips: ${clips.error.message}`);
+  let clipsQuery = supabase
+    .from('clips')
+    // count: 'exact' is what makes hasMore answerable without a second query.
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: query.sort === 'oldest' })
+    .range(from, from + pageSize - 1);
+
+  if (query.tags?.length) {
+    // contains, not overlaps: picking two tags should narrow the list rather
+    // than widen it, which is what a reader expects of stacked filters.
+    clipsQuery = clipsQuery.contains('tags', query.tags);
+  }
+
+  const { data, error, count } = await clipsQuery;
+  if (error) throw new Error(`Could not load your clips: ${error.message}`);
+
+  const clips = data ?? [];
+  const total = count ?? clips.length;
+
+  if (clips.length === 0) {
+    return { clips: [], analyses: [], hasMore: false, total };
+  }
+
+  const analyses = await supabase
+    .from('analyses')
+    .select('*')
+    .in('clip_id', clips.map((c) => c.id))
+    .order('created_at', { ascending: false });
+
   if (analyses.error) throw new Error(`Could not load analyses: ${analyses.error.message}`);
 
-  return { clips: clips.data ?? [], analyses: analyses.data ?? [] };
+  return {
+    clips,
+    analyses: analyses.data ?? [],
+    hasMore: from + clips.length < total,
+    total,
+  };
+}
+
+/** Every tag in use, for the filter row. */
+export async function fetchTags(): Promise<string[]> {
+  const { data, error } = await supabase.from('clips').select('tags');
+  if (error) throw new Error(`Could not load tags: ${error.message}`);
+  const seen = new Set<string>();
+  for (const row of data ?? []) for (const tag of row.tags ?? []) seen.add(tag);
+  return [...seen].sort();
 }
 
 function extensionFor(uri: string, mimeType?: string | null): string {

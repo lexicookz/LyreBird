@@ -312,6 +312,13 @@ export default function LibraryScreen({
   onLoadSamples,
   onRetry,
   onDelete,
+  tags,
+  allTags,
+  onTagsChange,
+  onSortChange,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: {
   clips: Clip[];
   analyses: TypedAnalysis[];
@@ -320,6 +327,16 @@ export default function LibraryScreen({
   lastImportCount: number | null;
   /** Current time from the library hook; ticks while clips are analysing. */
   now: number;
+  /** Tags currently filtering the query. Applied in Postgres, not here. */
+  tags: string[];
+  /** Every tag in use, for the filter row. */
+  allTags: string[];
+  onTagsChange: (tags: string[]) => void;
+  /** Date ordering is done by the query; 'focus' is a reorder of the page. */
+  onSortChange: (sort: 'newest' | 'oldest') => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   brandName?: string;
   /** Background of the brand's initial in the header. */
   brandColor?: string;
@@ -358,15 +375,15 @@ export default function LibraryScreen({
       return [clip.title ?? '', a?.payload.hook ?? '', (a?.payload.onScreenText ?? []).join(' '), ...clip.tags]
         .some((text) => text.toLowerCase().includes(q));
     });
-    const byDate = (x: Clip, y: Clip) => Date.parse(y.created_at) - Date.parse(x.created_at);
+    // Date ordering already happened in the query, so the rows arrive in the
+    // right order. Only the focus reorder is left, and it has to be here:
+    // it depends on funnelStage, which lives in the analysis rather than on
+    // the clip, so Postgres cannot sort clips by it without a join.
+    if (sort !== 'focus' || !focus) return matches;
     return [...matches].sort((x, y) => {
-      if (sort === 'oldest') return -byDate(x, y);
-      if (sort === 'focus' && focus) {
-        const xf = analysisByClip.get(x.id)?.payload.funnelStage === focus ? 0 : 1;
-        const yf = analysisByClip.get(y.id)?.payload.funnelStage === focus ? 0 : 1;
-        if (xf !== yf) return xf - yf;
-      }
-      return byDate(x, y);
+      const xf = analysisByClip.get(x.id)?.payload.funnelStage === focus ? 0 : 1;
+      const yf = analysisByClip.get(y.id)?.payload.funnelStage === focus ? 0 : 1;
+      return xf - yf;
     });
   }, [clips, analysisByClip, query, stageFilter, sort, focus]);
 
@@ -400,6 +417,14 @@ export default function LibraryScreen({
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarSpace + 24 }]}
         keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={200}
+        onScroll={({ nativeEvent: e }) => {
+          // Fetch the next page before the user reaches the end, so the grid
+          // keeps filling rather than stopping and then jumping.
+          const fromBottom =
+            e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
+          if (fromBottom < 600 && hasMore && !loadingMore) onLoadMore();
+        }}
       >
         <Header brandName={brandName} brandColor={brandColor} onOpenBrandProfile={onOpenBrandProfile} />
 
@@ -480,6 +505,24 @@ export default function LibraryScreen({
               </Pressable>
             );
           })}
+          {allTags.map((tag) => {
+            const active = tags.includes(tag);
+            return (
+              <Pressable
+                key={`tag-${tag}`}
+                onPress={() =>
+                  // Stacking tags narrows: the query uses `contains`, so two
+                  // selected tags means clips carrying both.
+                  onTagsChange(active ? tags.filter((t) => t !== tag) : [...tags, tag])
+                }
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>#{tag}</Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
 
         {visible.length === 0 ? (
@@ -517,6 +560,8 @@ export default function LibraryScreen({
                 key={option.key}
                 onPress={() => {
                   setSort(option.key);
+                  // 'focus' still needs rows in date order underneath it.
+                  onSortChange(option.key === 'oldest' ? 'oldest' : 'newest');
                   setSortOpen(false);
                 }}
                 accessibilityRole="radio"
