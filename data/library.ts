@@ -185,6 +185,7 @@ export function useLibrary() {
   // from a question nobody asked.
   const [sort, setSortState] = useState<LibrarySort>('newest');
   const [tags, setTagsState] = useState<string[]>([]);
+  const [search, setSearchState] = useState('');
   const [allTags, setAllTags] = useState<string[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -202,7 +203,7 @@ export function useLibrary() {
     try {
       // Back to the first page: after an import or a delete, which page the
       // user was on no longer describes anything.
-      const next = await loadLibrary({ sort, tags });
+      const next = await loadLibrary({ sort, tags, search });
       setPage(0);
       setHasMore(next.hasMore);
       setState((current) => ({
@@ -217,14 +218,14 @@ export function useLibrary() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your library.');
     }
-  }, [sort, tags]);
+  }, [sort, tags, search]);
 
   /** The next page, appended. */
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     try {
-      const next = await loadLibrary({ sort, tags, page: page + 1 });
+      const next = await loadLibrary({ sort, tags, search, page: page + 1 });
       setPage((p) => p + 1);
       setHasMore(next.hasMore);
       setState((current) => {
@@ -242,10 +243,11 @@ export function useLibrary() {
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, page, sort, tags]);
+  }, [hasMore, loadingMore, page, sort, tags, search]);
 
   const setSort = useCallback((next: LibrarySort) => setSortState(next), []);
   const setTags = useCallback((next: string[]) => setTagsState(next), []);
+  const setSearch = useCallback((next: string) => setSearchState(next), []);
 
   useEffect(() => {
     let active = true;
@@ -390,6 +392,8 @@ export function useLibrary() {
     setSort,
     tags,
     setTags,
+    search,
+    setSearch,
     allTags,
     hasMore,
     loadingMore,

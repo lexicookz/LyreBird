@@ -321,6 +321,7 @@ function AppContent() {
             hasMore={library.hasMore}
             loadingMore={library.loadingMore}
             onLoadMore={library.loadMore}
+            onSearchChange={library.setSearch}
             brandName={brandSetup?.name}
             brandColor={brandColor}
             focus={brandSetup?.focus}

@@ -289,6 +289,7 @@ export type Database = {
           owner_id: string
           position_in_parent: number | null
           recording_id: string | null
+          search_tsv: unknown
           status: string
           storage_path: string
           tags: string[]
@@ -305,6 +306,7 @@ export type Database = {
           owner_id: string
           position_in_parent?: number | null
           recording_id?: string | null
+          search_tsv?: unknown
           status?: string
           storage_path: string
           tags?: string[]
@@ -321,6 +323,7 @@ export type Database = {
           owner_id?: string
           position_in_parent?: number | null
           recording_id?: string | null
+          search_tsv?: unknown
           status?: string
           storage_path?: string
           tags?: string[]
@@ -419,7 +422,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      clips_search_document: {
+        Args: { p_clip_id: string; p_tags: string[]; p_title: string }
+        Returns: unknown
+      }
     }
     Enums: {
       [_ in never]: never
