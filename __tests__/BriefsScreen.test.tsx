@@ -7,8 +7,8 @@ import type { CalendarItem } from '../data/calendar';
 
 // Brief 1 planned, brief 2 posted, the other three unscheduled.
 const items: CalendarItem[] = [
-  { briefId: 'bbbbbbbb-0000-4000-8000-000000000001', date: '2026-10-06', stage: 'TOFU', status: 'planned' },
-  { briefId: 'bbbbbbbb-0000-4000-8000-000000000002', date: '2026-09-20', stage: 'MOFU', status: 'posted' },
+  { id: 'e1', briefId: 'bbbbbbbb-0000-4000-8000-000000000001', date: '2026-10-06', stage: 'TOFU', status: 'planned' },
+  { id: 'e2', briefId: 'bbbbbbbb-0000-4000-8000-000000000002', date: '2026-09-20', stage: 'MOFU', status: 'posted' },
 ];
 
 async function renderBriefs() {

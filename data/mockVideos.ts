@@ -340,6 +340,7 @@ export const mockCalendarEntries: CalendarEntry[] = [
     brief_id: 'bbbbbbbb-0000-4000-8000-000000000001',
     scheduled_for: '2026-09-02',
     platform: 'tiktok',
+    status: 'planned',
     notes: null,
     created_at: '2026-08-21T10:05:00Z',
     updated_at: '2026-08-21T10:05:00Z',

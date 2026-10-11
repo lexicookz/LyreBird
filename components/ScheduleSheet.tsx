@@ -44,7 +44,11 @@ export default function ScheduleSheet({
   existing?: CalendarItem;
   defaultStage: FunnelStage;
   suggestedDate: string;
-  onSave: (values: Omit<CalendarItem, 'briefId'>) => void;
+  /**
+   * The sheet chooses a date, a stage and a status -- not which brief, and
+   * not the row id, both of which the caller already knows.
+   */
+  onSave: (values: Omit<CalendarItem, 'briefId' | 'id'>) => void;
   onRemove: () => void;
   onClose: () => void;
   /** Opens the brief itself. Left out when the sheet was opened from the brief. */
