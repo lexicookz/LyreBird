@@ -43,16 +43,35 @@ AnalysisField = Literal[
 ]
 
 
-class _Contract(BaseModel):
-    # Reject unknown keys: a model reply with extra fields means the prompt and
-    # the schema have drifted, and that should fail loudly rather than be stored.
+class _Input(BaseModel):
+    """What we hand the model. Unknown keys here mean our own code is wrong,
+    so they fail loudly."""
+
     model_config = ConfigDict(extra="forbid")
+
+
+class _Output(BaseModel):
+    """What the model hands back.
+
+    Deliberately NOT extra="forbid". Pydantic turns that into
+    `additionalProperties: false`, which the SDK sends as
+    `additional_properties` and Gemini rejects outright -- every brief call
+    died with "Cannot find field" before the model ran.
+
+    Little is lost. These classes are passed as `response_schema`, so
+    generation is constrained to exactly these fields; an unknown key is not
+    something the model is able to produce. The strictness was guarding
+    against a case the schema already prevents, at the cost of the request
+    being rejected.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
 
 # ---------- input ----------
 
 
-class BrandProfile(_Contract):
+class BrandProfile(_Input):
     """What Adapt knows about who the brief is for. Built from a brands row."""
 
     name: str
@@ -90,13 +109,13 @@ class BrandProfile(_Contract):
 # their own briefs columns, so the model is never asked to repeat them.
 
 
-class Hook(_Contract):
+class Hook(_Output):
     line: str = Field(description="The spoken opening line.")
     on_screen_text: str = Field(description='Text overlay for the hook, or "" for none.')
     visual: str = Field(description="What is on screen in the first seconds.")
 
 
-class Beat(_Contract):
+class Beat(_Output):
     start_seconds: float = Field(ge=0)
     # ge rather than gt. Pydantic turns gt into exclusiveMinimum, which
     # Gemini's response_schema rejects outright -- "Extra inputs are not
@@ -116,14 +135,14 @@ class Beat(_Contract):
         return self
 
 
-class WhyItWorks(_Contract):
+class WhyItWorks(_Output):
     brief_element: str = Field(description="Which part of this brief, e.g. 'hook' or 'beat 3'.")
     source_field: AnalysisField = Field(description="The analysis field it was adapted from.")
     source_detail: str = Field(description="What the source video did there.")
     rationale: str = Field(description="Why carrying it over should work for this brand.")
 
 
-class PostingSlot(_Contract):
+class PostingSlot(_Output):
     """A relative slot. Dates are computed in code from day_offset, because
     models are unreliable at date arithmetic."""
 
@@ -140,7 +159,7 @@ class PostingSlot(_Contract):
         return self
 
 
-class BriefDraft(_Contract):
+class BriefDraft(_Output):
     """Gemini's structured output for one Adapt run. Stored as briefs.payload."""
 
     title: str
