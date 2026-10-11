@@ -14,6 +14,20 @@ different question and must not be answered from an old reply.
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
+
+# Point the shared cache somewhere writable before importing it. Its default
+# is beside the module, which inside the image means /srv/pipeline -- writable,
+# but wiped on every deploy and not where application data belongs.
+#
+# This is still per-instance and still lost on restart. The durable fix is the
+# Supabase side of that cache, which currently has no table to write to, so
+# treat this as "does not re-analyse within one run", not as a real cache.
+os.environ.setdefault(
+    "LYREBIRD_CACHE_FILE",
+    os.path.join(tempfile.gettempdir(), "lyrebird-analysis-cache.json"),
+)
 
 # Puts /pipeline on the path. Importing this for the side effect rather than
 # repeating the lookup -- see app/analysis.py for why it is done that way.
