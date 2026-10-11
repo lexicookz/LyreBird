@@ -113,6 +113,44 @@ jest.mock('../data/account', () => {
 // Clips live in Supabase now. These tests are about App's navigation and
 // screens, so the data layer answers from memory -- reaching a database would
 // make them a different kind of test, and a slower one.
+// The calendar is in Supabase now. These tests are about the screens, so it
+// answers from memory -- the rows behave like the table, including keeping
+// one entry per brief the way scheduleBrief does.
+jest.mock('../lib/calendar', () => {
+  const rows: any[] = [];
+  let n = 0;
+  return {
+    __rows: rows,
+    fetchCalendar: jest.fn(async () => [...rows]),
+    scheduleBrief: jest.fn(async (ownerId: string, briefId: string, date: string, status: string) => {
+      const i = rows.findIndex((r) => r.brief_id === briefId);
+      if (i >= 0) rows.splice(i, 1);
+      n += 1;
+      const row = {
+        id: `cal-${n}`, owner_id: ownerId, brief_id: briefId,
+        scheduled_for: date, status, platform: null, notes: null,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      };
+      rows.push(row);
+      return row;
+    }),
+    moveEntry: jest.fn(async (id: string, date: string) => {
+      const row = rows.find((r) => r.id === id);
+      if (row) row.scheduled_for = date;
+      return row;
+    }),
+    setEntryStatus: jest.fn(async (id: string, status: string) => {
+      const row = rows.find((r) => r.id === id);
+      if (row) row.status = status;
+      return row;
+    }),
+    unscheduleBrief: jest.fn(async (briefId: string) => {
+      const i = rows.findIndex((r) => r.brief_id === briefId);
+      if (i >= 0) rows.splice(i, 1);
+    }),
+  };
+});
+
 jest.mock('../lib/clips', () => {
   const rows: { clips: any[]; analyses: any[] } = { clips: [], analyses: [] };
   let n = 0;
@@ -239,6 +277,29 @@ async function withOneAnalysedClip() {
   clipsApi.__rows.analyses = sample.analyses.filter((a) => a.clip_id === id);
 }
 
+/**
+ * Sample entries in the calendar table, the way the database would hold
+ * them. Seeded there rather than in AsyncStorage: the calendar reads rows
+ * now, so a local copy would never be seen.
+ */
+function withSampleCalendar() {
+  const rows = require('../lib/calendar').__rows;
+  rows.length = 0;
+  sampleCalendar().forEach((item, i) =>
+    rows.push({
+      id: `cal-seed-${i + 1}`,
+      owner_id: 'user-1',
+      brief_id: item.briefId,
+      scheduled_for: item.date,
+      status: item.status,
+      platform: null,
+      notes: null,
+      created_at: '2026-09-01T00:00:00Z',
+      updated_at: '2026-09-01T00:00:00Z',
+    })
+  );
+}
+
 describe('App', () => {
   beforeEach(async () => {
     mockAnalyzeVideo();
@@ -247,6 +308,7 @@ describe('App', () => {
     const clipsApi = require('../lib/clips');
     clipsApi.__rows.clips = [];
     clipsApi.__rows.analyses = [];
+    require('../lib/calendar').__rows.length = 0;
   });
 
   // ---------- first run and accounts ----------
@@ -430,12 +492,12 @@ describe('App', () => {
     await fireEvent.press(await findByLabelText('Calendar'));
 
     expect(await findByText('Nothing to film\nthis week')).toBeTruthy();
-    expect(await AsyncStorage.getItem('lyrebird.calendar')).toBeNull();
+    expect(require('../lib/calendar').__rows).toHaveLength(0);
   });
 
   test('an entry on the calendar can be rescheduled and its status changed', async () => {
     await signedIn();
-    await AsyncStorage.setItem('lyrebird.calendar', JSON.stringify(sampleCalendar()));
+    withSampleCalendar();
     await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
     const { findByLabelText, findByText, getByText, getAllByText, queryByText } = await render(<App />);
 
@@ -449,7 +511,7 @@ describe('App', () => {
 
     expect(queryByText('Schedule brief')).toBeNull();
     expect(getByText('Posted')).toBeTruthy();
-    const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.calendar')) ?? '[]');
+    const saved = require('../lib/calendar').__rows.map((r: any) => ({ briefId: r.brief_id, date: r.scheduled_for, status: r.status }));
     expect(saved).toContainEqual(
       expect.objectContaining({ briefId: 'bbbbbbbb-0000-4000-8000-000000000001', status: 'posted' })
     );
@@ -457,7 +519,7 @@ describe('App', () => {
 
   test('"See brief" on a calendar entry opens the brief', async () => {
     await signedIn();
-    await AsyncStorage.setItem('lyrebird.calendar', JSON.stringify(sampleCalendar()));
+    withSampleCalendar();
     await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
     const { findByLabelText, findByText, getByText, queryByText } = await render(<App />);
 
