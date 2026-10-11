@@ -127,6 +127,7 @@ export function clipsFromAssets(
       tags: [],
       duration_seconds: asset.duration ? Math.round(asset.duration / 1000) : null,
       position_in_parent: null,
+      error_message: null,
       status: 'processing',
       created_at: stamp,
       updated_at: stamp,
