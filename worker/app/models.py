@@ -83,6 +83,9 @@ class Clip(_Base):
     # the private thumbnails bucket. A clip may have either, both or neither.
     thumbnail_url: str | None = None
     status: ClipStatus = "processing"
+    # Why the last run failed, or None. Cleared on success -- a stale message
+    # beside status = 'ready' would read as a current problem.
+    error_message: str | None = None
     title: str | None = None
     tags: list[str] = []
     duration_seconds: Decimal | None = None

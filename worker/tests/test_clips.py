@@ -309,8 +309,10 @@ def test_prepare_returns_422_and_marks_clip_failed_when_media_processing_fails(
     assert response.json() == {
         "detail": "ffmpeg failed",
     }
+    # BE-14: the row records why, not just that it failed. Without the reason
+    # the app can only show a generic error and offer a blind retry.
     assert fake_client.updates == [
-        {"status": "failed"},
+        {"status": "failed", "error_message": "Transcode failed: ffmpeg failed"},
     ]
 
 def test_prepare_returns_500_when_clip_row_cannot_be_updated(monkeypatch):
