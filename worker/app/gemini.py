@@ -14,7 +14,12 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
+import json
+
+from pydantic import BaseModel
+
 from app.analysis import AnalysisResult
+from app.brief_schema import BrandProfile, BriefDraft
 from app.config import settings
 from app.prompts import load, load_latest
 
@@ -22,6 +27,7 @@ from app.prompts import load, load_latest
 # version ran is written to analyses.prompt_version, and published versions
 # are never edited -- see app/prompts.py for why that matters.
 PROMPT_NAME = "analyse"
+BRIEF_PROMPT_NAME = "brief"
 
 
 # Low but not zero: the taxonomy fields should be near-deterministic, while
@@ -125,6 +131,59 @@ def delete_file(name: str) -> None:
         pass
 
 
+def _call_model(contents: list, schema: type[BaseModel]) -> BaseModel:
+    """One model call with the retry and validation rules BE-14 set out.
+
+    Shared by every generation the worker does, so a brief fails the same way
+    an analysis does rather than growing its own error handling.
+    """
+    client = get_client()
+
+    def _once():
+        return client.models.generate_content(
+            model=settings.gemini_model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=schema,
+                temperature=TEMPERATURE,
+            ),
+        )
+
+    try:
+        response = _once()
+    except Exception as first:
+        if not _looks_transient(first):
+            # A rejected request or a bad key will fail the same way twice.
+            raise GeminiError(f"{type(first).__name__}: {first}") from first
+
+        time.sleep(_RETRY_BACKOFF_SECONDS)
+        try:
+            response = _once()
+        except Exception as second:
+            raise GeminiTimeout(
+                f"Gemini was unreachable after one retry: {type(second).__name__}: {second}"
+            ) from second
+
+    # With a response_schema the SDK parses and validates for us, and leaves
+    # `parsed` as None when the model returned something that does not fit.
+    # That is the loud failure: the raw text goes in the message so the cause
+    # is visible, but nothing is persisted.
+    parsed = getattr(response, "parsed", None)
+    if parsed is None:
+        raw = (getattr(response, "text", "") or "")[:500]
+        raise GeminiError(f"Gemini returned a response that does not match the schema: {raw}")
+
+    if not isinstance(parsed, schema):
+        # Defensive: older SDK versions hand back a dict here.
+        try:
+            parsed = schema.model_validate(parsed)
+        except Exception as exc:
+            raise GeminiError(f"Response did not validate against {schema.__name__}: {exc}") from exc
+
+    return parsed
+
+
 def analyse(video_file, prompt_version: str | None = None) -> tuple[AnalysisResult, str]:
     """Run the analysis prompt against an uploaded video.
 
@@ -138,48 +197,31 @@ def analyse(video_file, prompt_version: str | None = None) -> tuple[AnalysisResu
     analyses of one clip become comparable.
     """
     prompt, version = load(prompt_version) if prompt_version else load_latest(PROMPT_NAME)
-    client = get_client()
+    result = _call_model([video_file, prompt], AnalysisResult)
+    return result, version  # type: ignore[return-value]
 
-    def _call():
-        return client.models.generate_content(
-            model=settings.gemini_model,
-            contents=[video_file, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=AnalysisResult,
-                temperature=TEMPERATURE,
-            ),
-        )
 
-    try:
-        response = _call()
-    except Exception as first:
-        if not _looks_transient(first):
-            # A rejected request or a bad key will fail the same way twice.
-            raise GeminiError(f"{type(first).__name__}: {first}") from first
+def write_brief(
+    analysis_payload: dict,
+    brand_profile: BrandProfile,
+    prompt_version: str | None = None,
+) -> tuple[BriefDraft, str]:
+    """Adapt one clip's analysis into a brief for one brand.
 
-        time.sleep(_RETRY_BACKOFF_SECONDS)
-        try:
-            response = _call()
-        except Exception as second:
-            raise GeminiTimeout(
-                f"Gemini was unreachable after one retry: {type(second).__name__}: {second}"
-            ) from second
+    Text to text: the video is never re-uploaded. The analysis already
+    describes it, and sending the file again would cost an upload and a
+    minute to tell the model something it is being given in the prompt.
 
-    # With a response_schema the SDK parses and validates for us, and leaves
-    # `parsed` as None when the model returned something that does not fit.
-    # That is the loud failure the ticket asks for — the raw text goes in the
-    # message so the cause is visible, but nothing is persisted.
-    parsed = getattr(response, "parsed", None)
-    if parsed is None:
-        raw = (getattr(response, "text", "") or "")[:500]
-        raise GeminiError(f"Gemini returned a response that does not match the schema: {raw}")
+    Takes a BrandProfile rather than a raw brands row, so the mapping from
+    column to prompt lives in one place (BrandProfile.from_brand) instead of
+    being re-derived here.
+    """
+    prompt, version = load(prompt_version) if prompt_version else load_latest(BRIEF_PROMPT_NAME)
 
-    if not isinstance(parsed, AnalysisResult):
-        # Defensive: older SDK versions hand back a dict here.
-        try:
-            parsed = AnalysisResult.model_validate(parsed)
-        except Exception as exc:
-            raise GeminiError(f"Response did not validate against AnalysisResult: {exc}") from exc
-
-    return parsed, version
+    contents = [
+        prompt,
+        "SOURCE VIDEO BREAKDOWN:\n" + json.dumps(analysis_payload, indent=2, ensure_ascii=False),
+        "BRAND PROFILE:\n" + brand_profile.model_dump_json(indent=2),
+    ]
+    result = _call_model(contents, BriefDraft)
+    return result, version  # type: ignore[return-value]
