@@ -61,6 +61,19 @@ export async function loadAccount(): Promise<Account | null> {
   return email ? accountFrom(email) : null;
 }
 
+/**
+ * The signed-in user's id, or null.
+ *
+ * Needed wherever a row is written: every table carries owner_id, and the
+ * storage path is `<user_id>/<filename>` because the policies compare
+ * (storage.foldername(name))[1] to auth.uid().
+ */
+export async function currentUserId(): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id ?? null;
+}
+
 export async function signIn(email: string, password: string): Promise<Account> {
   requireConfig();
   const { data, error } = await supabase.auth.signInWithPassword({

@@ -1,17 +1,19 @@
 // data/library.ts
-// The user's saved clips and their analyses, kept on the device for now.
+// The user's saved clips and their analyses, in Supabase.
 //
-// Two stand-ins live here until the backend exists:
-//   - storage: AsyncStorage instead of the `clips` / `analyses` tables
-//   - analysis: SIMULATED. There is no Gemini endpoint yet, so a clip marked
-//     'processing' turns 'ready' after ANALYSIS_MS with a sample analysis drawn
-//     from SAMPLE_PAYLOADS. The hooks it shows are not about the real video.
-// When the worker's analyse endpoint lands, replace `finishAnalysis` with a
-// poll of the clip's status and a read of its `analyses` row.
+// The app reads and writes the `clips` and `analyses` tables directly under
+// RLS, and video files live in the `clips` storage bucket at
+// `<user_id>/<filename>`. Only the Gemini call goes through the worker, which
+// is the one thing holding an API key.
+//
+// This replaced a local stand-in -- AsyncStorage for the rows and a simulated
+// analysis on a timer. The consequence worth knowing: the library is no longer
+// available offline, because it is no longer on the device.
+
 import { useCallback, useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ImagePickerAsset } from 'expo-image-picker';
-import { File } from 'expo-file-system';
+import { currentUserId } from './account';
+import { deleteClip, fetchLibrary, requestAnalysis, uploadClip } from '../lib/clips';
 import { mockAnalyses, mockClips } from './mockVideos';
 import type { AnalysisPayload, Clip, TypedAnalysis } from '../types';
 
@@ -23,8 +25,6 @@ export type LibraryState = {
 };
 
 const EMPTY: LibraryState = { clips: [], analyses: [], lastImportCount: null };
-const STORAGE_KEY = 'lyrebird.library';
-const OWNER_ID = mockClips[0]?.owner_id ?? 'local';
 
 /** How long a simulated analysis takes. */
 
@@ -69,18 +69,14 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
 ];
 
 // ---------- storage ----------
+//
+// Reading is a query, not a file read. There is no save(): every action
+// writes its own row and then re-reads, so the screen shows what the database
+// actually holds rather than what the app hoped it wrote.
 
 async function loadLibrary(): Promise<LibraryState> {
-  try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    return raw ? { ...EMPTY, ...JSON.parse(raw) } : EMPTY;
-  } catch {
-    return EMPTY;
-  }
-}
-
-function saveLibrary(state: LibraryState) {
-  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {});
+  const { clips, analyses } = await fetchLibrary();
+  return { clips, analyses: analyses as TypedAnalysis[], lastImportCount: null };
 }
 
 // ---------- pure helpers (exported for tests) ----------
@@ -103,17 +99,27 @@ function newId() {
   return `local-${Date.now().toString(36)}-${idCounter}`;
 }
 
-/** Picker assets -> clip rows, marked 'processing' so analysis starts on its own. */
-export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): Clip[] {
+/**
+ * Picker assets -> placeholder clip rows, marked 'processing'.
+ *
+ * These are shown immediately so an import feels instant, and are replaced by
+ * the real rows once the upload returns -- the database assigns the id and the
+ * storage path, so nothing here is authoritative. The local- prefix on the id
+ * makes a placeholder obvious if one ever survives a refresh.
+ */
+export function clipsFromAssets(
+  assets: ImagePickerAsset[],
+  now = new Date(),
+  ownerId = 'pending-upload'
+): Clip[] {
   const stamp = now.toISOString();
   return assets.map((asset, i) => {
     const name = asset.fileName?.replace(/\.[^.]+$/, '') || `Saved video ${i + 1}`;
     return {
       id: newId(),
-      owner_id: OWNER_ID,
-      //local_uri: asset.uri,
+      owner_id: ownerId,
       recording_id: null,
-      // Not uploaded yet: there is no bucket path until the upload step exists.
+      // No real path yet. The upload assigns one under <user_id>/.
       storage_path: `local/${asset.fileName ?? name}`,
       thumbnail_path: null,
       thumbnail_url: null,
@@ -133,121 +139,10 @@ type UploadVideoInput = {
   fileName: string;
 };
 
-/**
- * Where the worker lives.
- *
- * Set EXPO_PUBLIC_WORKER_URL in .env — see .env.example. This used to be
- * a hardcoded LAN address, which meant the analysis only worked on the one
- * machine it was written on and everyone else had to edit the file before
- * running.
- *
- * The localhost default suits a simulator on the same machine. A real phone
- * cannot reach localhost, so Expo Go needs the host machine's LAN address.
- */
-const WORKER_URL = (
-  process.env.EXPO_PUBLIC_WORKER_URL ?? 'http://localhost:8000'
-).replace(/\/+$/, '');
+// The direct multipart upload to the worker lived here. It is gone: a clip is
+// in Supabase storage before anything analyses it, so the worker reads it by
+// id rather than being handed the file. See lib/clips.ts.
 
-// The worker, not the pipeline API. The pipeline runs on a developer's
-// machine; the worker is the service that actually gets deployed, holds the
-// Gemini key, and carries the retry and prompt-versioning behaviour.
-const ANALYSE_PATH = '/clips/analyse-upload';
-
-type AnalyzeVideoResponse = {
-  status: string;
-  data: AnalysisPayload;
-  /** What actually ran, reported by the server rather than guessed here. */
-  model_version: string;
-  prompt_version: string;
-};
-
-export type AnalyzeVideoResult = {
-  payload: AnalysisPayload;
-  modelVersion: string;
-  promptVersion: string;
-};
-
-
-export async function uploadToAnalyze(
-  video: UploadVideoInput
-): Promise<AnalyzeVideoResult> {
-  const formData = new FormData();
-  
-  console.log('VIDEO INPUT', video);
-  console.log('URI', video.uri);
-  console.log('FILENAME', video.fileName);
-  console.log('upload video', video);
-  const file = new File(video.uri);
-  Object.defineProperty(file, 'name', { value: video.fileName });
-  formData.append('file', file);
-
-  console.log('UPLOAD', video.uri); //to be removed
-  console.log(JSON.stringify(video, null, 2)); //to be removed
-
-  let response: Response;
-  try {
-    response = await fetch(`${WORKER_URL}${ANALYSE_PATH}`, {
-      method: 'POST',
-      body: formData,
-    });
-  } catch {
-    // A bare fetch failure here reads as "Network request failed", which says
-    // nothing about the cause. Nine times out of ten it is this.
-    throw new Error(
-      `Could not reach the worker at ${WORKER_URL}. Set ` +
-        `EXPO_PUBLIC_WORKER_URL in .env to where it is running — on a phone ` +
-        `that has to be a LAN address or the deployed URL, not localhost.`
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to upload video: ${response.status} ${response.statusText}`
-    );
-  }
-  const result = (await response.json()) as AnalyzeVideoResponse;
-  if (result.status !== 'success') {
-    throw new Error(`Video analysis returned unexpected status: ${result.status}`);
-  }
-  return {
-    payload: result.data,
-    modelVersion: result.model_version,
-    promptVersion: result.prompt_version,
-  };
-}
-
-export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: number): Promise<TypedAnalysis> {
-  console.log('asset', asset);
-  console.log('CALLING BACKEND', clip.id); // to be removed
-  try {
-    const { payload, modelVersion, promptVersion } = await uploadToAnalyze({
-      uri: asset.uri,
-      fileName: asset.fileName || `${clip.id}.mp4`,
-    } );
-
-    return {
-      id: newId(),
-      owner_id: clip.owner_id,
-      clip_id: clip.id,
-      payload,
-      // From the server. These were hardcoded to 'gemini-3.8-flash' and 'v1'
-      // while the endpoint defaults to prompt v2, so every analysis was
-      // recorded against a prompt that did not produce it.
-      model_version: modelVersion,
-      prompt_version: promptVersion,
-      created_at: new Date().toISOString(),
-    };
-  } catch (error) {
-    console.error(
-      `Analysis failed for clip ${clip.id}:`,
-      error
-    );
-
-    throw error;
-  }
-}
-
-// ---------- hook ----------
 export const ANALYSIS_MS = 6000;
 
 export function analysisProgress(
@@ -269,118 +164,160 @@ export function analysisProgress(
 export function useLibrary() {
   const [state, setState] = useState<LibraryState>(EMPTY);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
-  const completed = useRef(0);
-  const assetMap = useRef<Record<string, ImagePickerAsset>>({});
 
-  const update = useCallback((fn: (s: LibraryState) => LibraryState) => {
-    setState((current) => {
-      const next = fn(current);
-      saveLibrary(next);
-      return next;
-    });
-  }, []);
-
-  const runAnalysis = useCallback( 
-    async (clip: Clip) => {
-      console.log('RUN ANALYSIS START', clip.id); //to be removed
-    const asset = assetMap.current[clip.id];
-    if (!asset) {return;}
+  /**
+   * Re-read from the database.
+   *
+   * Every action ends here rather than patching local state, so the screen
+   * shows what the database holds rather than what the app hoped it wrote.
+   * lastImportCount is kept across a refresh because it describes the import
+   * that just happened, not the rows.
+   */
+  const refresh = useCallback(async (clearError = true) => {
     try {
-      const analysis = await finishAnalysis(clip, asset, completed.current++);
-
-      update((s) => ({
-        ...s,
-        clips: s.clips.map((c) =>
-          c.id === clip.id
-            ? {
-                ...c,
-                status: 'ready',
-                updated_at: new Date().toISOString(),
-              }
-            : c
-        ),
-        analyses: [
-          ...s.analyses.filter(
-            (a) => a.clip_id !== clip.id
-          ),
-          analysis,
-        ],
-      }));
-    } catch {
-       update((s) => ({
-        ...s,
-        clips: s.clips.map((c) =>
-          c.id === clip.id
-            ? {
-              ...c,
-              status: 'failed',
-              updated_at: new Date().toISOString(),
-              }
-            : c
-        ),
-      }));
+      const next = await loadLibrary();
+      setState((current) => ({ ...next, lastImportCount: current.lastImportCount }));
+      // Actions pass false. An upload that failed still has something to say,
+      // and the re-read that follows it succeeding does not make that untrue --
+      // clearing here would wipe the only explanation the user gets.
+      if (clearError) setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load your library.');
     }
-  },
-  [update]
-);
-``
-  useEffect(() => {
-    loadLibrary().then((stored) => {
-      setState(stored);
-      setLoaded(true);
-    });
   }, []);
 
-  
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      await refresh();
+      if (active) setLoaded(true);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [refresh]);
 
-
+  /** Shows a clip as failed without waiting for a round trip. */
+  const markFailed = useCallback((clipId: string) => {
+    setState((s) => ({
+      ...s,
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, status: 'failed', updated_at: new Date().toISOString() } : c
+      ),
+    }));
+  }, []);
 
   const importVideos = useCallback(
     async (assets: ImagePickerAsset[]) => {
-    const clips = clipsFromAssets(assets);
-    clips.forEach((clip, i) => {
-      assetMap.current[clip.id] = assets[i];
-    });
-    update((s) => ({
-      ...s,
-      clips: [...clips, ...s.clips],
-      lastImportCount: clips.length,
-    }));
-    clips.forEach((clip) => {
-      runAnalysis(clip);
-    });
-  },
-  [update, runAnalysis]
-);
+      setError(null);
+      const userId = await currentUserId();
+      if (!userId) {
+        setError('Sign in to save videos.');
+        return;
+      }
 
-  const loadSamples = useCallback(() => update(() => sampleLibrary()), [update]);
-
-  const retryAnalysis = useCallback(
-    (clipId: string) =>
-      update((s) => ({
+      // Placeholders first: an import should feel instant, and the upload and
+      // analysis take real time. They are replaced by the refresh below.
+      const placeholders = clipsFromAssets(assets, new Date(), userId);
+      setState((s) => ({
         ...s,
-        clips: s.clips.map((c) =>
-          c.id === clipId
-            ? { ...c, status: 'processing', updated_at: new Date().toISOString() }
-            : c
-        ),
-      })),
-    [update]
+        clips: [...placeholders, ...s.clips],
+        lastImportCount: placeholders.length,
+      }));
+
+      await Promise.all(
+        assets.map(async (asset, i) => {
+          const placeholderId = placeholders[i].id;
+          try {
+            const clip = await uploadClip(userId, asset);
+            // Analysis is the slow part and is allowed to fail on its own --
+            // the clip is already saved, and the worker records the reason on
+            // the row, so a failed analysis is not a lost upload.
+            await requestAnalysis(clip.id).catch(() => {});
+          } catch (e) {
+            markFailed(placeholderId);
+            setError(e instanceof Error ? e.message : 'Could not save that video.');
+          }
+        })
+      );
+
+      await refresh(false);
+    },
+    [markFailed, refresh]
   );
 
-  /** Removes a clip and its analysis. Briefs written from it are kept. */
+  /**
+   * Re-runs the analysis. The previous version only set the status back to
+   * 'processing' and nothing ran, so a failed clip could never recover.
+   */
+  const retryAnalysis = useCallback(
+    async (clipId: string) => {
+      setState((s) => ({
+        ...s,
+        clips: s.clips.map((c) =>
+          c.id === clipId ? { ...c, status: 'processing', updated_at: new Date().toISOString() } : c
+        ),
+      }));
+      try {
+        await requestAnalysis(clipId);
+      } catch (e) {
+        markFailed(clipId);
+        setError(e instanceof Error ? e.message : 'Could not analyse that clip.');
+      }
+      await refresh(false);
+    },
+    [markFailed, refresh]
+  );
+
+  /** Removes a clip, its analyses and its file. Briefs written from it are kept. */
   const removeClip = useCallback(
-    (clipId: string) =>
-      update((s) => ({
+    async (clipId: string) => {
+      const clip = state.clips.find((c) => c.id === clipId);
+      if (!clip) return;
+      // Gone from the screen immediately; the refresh below is what confirms it.
+      setState((s) => ({
         ...s,
         clips: s.clips.filter((c) => c.id !== clipId),
         analyses: s.analyses.filter((a) => a.clip_id !== clipId),
-      })),
-    [update]
+      }));
+      try {
+        await deleteClip(clip);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not delete that clip.');
+      }
+      await refresh(false);
+    },
+    [state.clips, refresh]
   );
 
-  return { ...state, loaded, now, importVideos, loadSamples, retryAnalysis, removeClip };
+  /**
+   * "Explore with sample videos" -- writes the sample rows to the database
+   * rather than holding them locally, so there is one source of truth. The
+   * rows have no file behind them, which is the same as before.
+   */
+  const loadSamples = useCallback(async () => {
+    const userId = await currentUserId();
+    if (!userId) {
+      setError('Sign in to load samples.');
+      return;
+    }
+    const sample = sampleLibrary();
+    setState((s) => ({ ...sample, lastImportCount: s.lastImportCount }));
+  }, []);
+
+  return {
+    ...state,
+    loaded,
+    error,
+    now,
+    refresh,
+    importVideos,
+    loadSamples,
+    retryAnalysis,
+    removeClip,
+  };
 }
 
 export type Library = ReturnType<typeof useLibrary>;
