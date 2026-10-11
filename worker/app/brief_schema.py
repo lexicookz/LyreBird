@@ -98,7 +98,12 @@ class Hook(_Contract):
 
 class Beat(_Contract):
     start_seconds: float = Field(ge=0)
-    end_seconds: float = Field(gt=0)
+    # ge rather than gt. Pydantic turns gt into exclusiveMinimum, which
+    # Gemini's response_schema rejects outright -- "Extra inputs are not
+    # permitted" -- so every brief call failed with a 422 before the model
+    # ran. The beat still cannot end at zero: _ends_after_start below
+    # requires end > start, and start is ge=0.
+    end_seconds: float = Field(ge=0)
     shot: str = Field(description="Framing and subject, e.g. 'Overhead, hands on grinder'.")
     action: str = Field(description="What happens in the shot.")
     voiceover: str = Field(description='Spoken words over this beat, or "".')
@@ -140,7 +145,9 @@ class BriefDraft(_Contract):
 
     title: str
     funnel_stage: FunnelStage
-    target_duration_seconds: int = Field(gt=0, le=180)
+    # ge=1, not gt=0, for the same reason as Beat.end_seconds. Identical
+    # meaning for an integer, and it emits `minimum`, which Gemini accepts.
+    target_duration_seconds: int = Field(ge=1, le=180)
     hook: Hook
     beats: list[Beat] = Field(min_length=1)
     cta: str

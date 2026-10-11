@@ -9,7 +9,7 @@
           "type": "string"
         },
         "end_seconds": {
-          "exclusiveMinimum": 0,
+          "minimum": 0,
           "title": "End Seconds",
           "type": "number"
         },
@@ -221,8 +221,8 @@
       "type": "array"
     },
     "target_duration_seconds": {
-      "exclusiveMinimum": 0,
       "maximum": 180,
+      "minimum": 1,
       "title": "Target Duration Seconds",
       "type": "integer"
     },
