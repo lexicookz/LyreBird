@@ -1,110 +1,146 @@
-"""Analyse a video from the command line, or from api.py.
-
-The Gemini call itself lives in gemini_call.py, shared with the worker so
-there is one implementation rather than two that drift apart. What stays here
-is the pipeline's own policy: several API keys rotated between attempts, and
-enough backed-off retries to ride out a rate limit, which is the right trade
-for a batch run and the wrong one for a request with a phone waiting on it.
-"""
-
+import hashlib
 import os
+import time
 from itertools import cycle
 
+from typing import Optional
+from cache import compute_video_hash, get_cached_analysis, set_cached_analysis 
 from dotenv import load_dotenv
 from google import genai
-
-import gemini_call
+from google.genai import types
+import json
 from schema import VideoAnalysis
 
 load_dotenv()
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompt")
 
-# Batch runs are long and hit rate limits; the worker serves one request with
-# someone waiting on it and must not. Hence 20 here and 2 there.
-MAX_ATTEMPTS = 20
-MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+def load_prompt(prompt_name: str) -> str:
+    prompt_path = os.path.join(PROMPTS_DIR, f"{prompt_name}.text")
+    if not os.path.exists(prompt_path):
+        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+    with open(prompt_path, "r", encoding="utf-8") as p:
+        return p.read().strip()
 
-PROMPT = (
-    "Analyze this short-form video and extract the required fields precisely.\n"
-    "Ensure the output strictly adheres to the requested JSON schema."
-)
+
+def _analysis_cache_key(video_hash: str, prompt_text: str) -> str:
+    return hashlib.sha256(f"{video_hash}\0{prompt_text}".encode("utf-8")).hexdigest()
+
+
+#API key handle/////////////////////////////////
+API_KEYS = [
+    value.strip()
+    for name, value in sorted(os.environ.items())
+    if name.startswith("GEMINI_API_KEY_")
+    and value.strip()
+]
+
 
 _key_cycle = None
 
-
-def _api_keys():
-    """Read the keys at call time, not at import.
-
-    This module used to raise at import if no GEMINI_API_KEY_* was set, which
-    meant anything importing it -- including the worker, which only wants the
-    shared call -- died on startup.
-    """
-    keys = [
-        value.strip()
-        for name, value in sorted(os.environ.items())
-        if name.startswith("GEMINI_API_KEY_") and value.strip()
-    ]
-    if not keys:
-        # Fall back to the single-key name the worker and .env.example use, so
-        # one key does not have to be renamed to run the pipeline.
-        single = os.getenv("GEMINI_API_KEY", "").strip()
-        if single:
-            keys = [single]
-    if not keys:
-        raise ValueError(
-            "No GEMINI_API_KEY_* or GEMINI_API_KEY found. Set at least one to run the pipeline."
-        )
-    return keys
-
-
 def get_client():
-    """Next key in the rotation."""
     global _key_cycle
     if _key_cycle is None:
-        _key_cycle = cycle(_api_keys())
-    # Deliberately not logged. Printing even a prefix of a key puts key
-    # material into whatever captures stdout.
-    return genai.Client(api_key=next(_key_cycle))
+        _key_cycle = cycle(API_KEYS)
+    api_key = next(_key_cycle)
+    if not API_KEYS:
+      raise ValueError("No GEMINI_API_KEY_* variables found.")
+    
+    print(f"Using key #{API_KEYS.index(api_key) + 1}")
+    return genai.Client(api_key=api_key)
 
+def roulette(client, contents, config, model="gemini-3.8-flash", max_attempts=1):
+    last_error = None
 
-def analyze_video(video_path):
-    """Upload a video and return its VideoAnalysis.
+    for attempt in range(max_attempts):
+        try:
+            if max_attempts > 1:
+                print(f"Attempts {attempt + 1}/{max_attempts}")
+            response = client.models.generate_content(model=model, contents=contents,config=config,)
+            return response
 
-    One client does both the upload and the generate call. Files API uploads
-    belong to the project behind the key that made them, so rotating keys
-    between the two meant the analysis could reference a file that key cannot
-    see -- a failure that reads like a missing file and comes and goes with
-    the rotation.
+        except Exception as e:
+            error_text = str(e)
 
-    Rotation still happens between retries, which is where it helps: a retry
-    re-sends the same file handle, and a fresh key is free to try.
-    """
-    client = get_client()
+            if (
+                 "429" in error_text
+                 or "503" in error_text
+                 or "RESOURCE_EXHAUSTED" in error_text.upper()):
+                 wait_time = min(2 ** attempt, 30)
 
-    video_file = gemini_call.upload_and_wait(
-        client,
-        video_path,
-        on_progress=lambda state: print(f"Upload {state.lower()}..."),
-    )
+                 print(
+                     f"Rate-limited. "
+                     f"Retrying in {wait_time}s...")
+                 time.sleep(wait_time)
+                 last_error = e
+            
+        
+            continue
+            raise
+    raise last_error
+
+#//////////////////////////////////////////////////////////////
+def analyze_video(
+    video_path: str,
+    max_attempts: int = 1,
+    client: Optional[genai.Client] = None,
+    prompt: Optional[str] = None,
+    prompt_version: str = "v2"
+
+) -> str:
+    active_prompt = prompt if prompt is not None else load_prompt(prompt_version)
+
+    #check cache
+    video_hash = compute_video_hash(video_path)
+    cache_key = _analysis_cache_key(video_hash, active_prompt)
+    cached_data = get_cached_analysis(cache_key)
+    if cached_data:
+        print(f"Cache hit for [{video_hash[:8]}...]. Returning stored result.")
+        return json.dumps(cached_data) if isinstance(cached_data, dict) else cached_data
+
+    print(f"Cache miss for [{video_hash[:8]}...]. Running Gemini analysis...")
+
+    if client is None:
+        client = get_client()
+
+    #upload video
+    video_file = client.files.upload(file=video_path)
+
+    #wait
+    while video_file.state.name in ["PENDING", "PROCESSING"]:
+        print("Processing video...")
+        time.sleep(2)
+        video_file = client.files.get(name=video_file.name)
+
+    if video_file.state.name == "FAILED":
+        raise ValueError("Video processing failed.")
+
     print("Video active. Analyzing...")
+    print(f"Using prompt version: {prompt_version}")
 
-    return gemini_call.generate(
-        client,
-        [video_file, PROMPT],
-        VideoAnalysis,
-        model=MODEL,
+    contents = [video_file, active_prompt]
+
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=VideoAnalysis,
         temperature=0.1,
-        max_attempts=MAX_ATTEMPTS,
-        backoff_seconds=gemini_call.exponential_backoff(cap_seconds=30),
-        next_client=get_client,
-        on_retry=lambda attempt, exc: print(
-            f"Rate limited (attempt {attempt}/{MAX_ATTEMPTS}), rotating key and retrying..."
-        ),
     )
+    #generate
+    response = roulette(client=client, contents=contents, config=config, max_attempts=max_attempts)
+    
 
+    try:
+        data_to_store = json.loads(response.text)
+        set_cached_analysis(cache_key, data_to_store)
+    except Exception as e:
+        print(f"Warning: Failed to cache analysis: {e}")
+
+    return response.text
+
+#//////////////////////////////////////////////////////////////
 
 def main():
     result = analyze_video("eval_vids/best_tip_test1.mov")
-    print(result.model_dump_json(indent=2))
+    print(result)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, fonts } from '../theme';
+import { fonts, Colors, useStyles, useTheme } from '../theme';
 
 export type TabKey = 'library' | 'search' | 'briefs' | 'calendar';
 
@@ -24,12 +24,10 @@ export function useTabBarSpace() {
   return BAR_HEIGHT + barOffset(insets.bottom) + 12;
 }
 
-const ACTIVE = colors.cream;
-const INACTIVE = 'rgba(251,247,244,0.45)';
-
 // ---------- icons (drawn with Views, matching the Figma shapes) ----------
 
 function LibraryIcon({ color }: { color: string }) {
+  const icon = useStyles(makeIconStyles);
   return (
     <View style={icon.box}>
       <View style={icon.grid}>
@@ -42,6 +40,7 @@ function LibraryIcon({ color }: { color: string }) {
 }
 
 function SearchIcon({ color }: { color: string }) {
+  const icon = useStyles(makeIconStyles);
   return (
     <View style={icon.box}>
       <View style={[icon.searchRing, { borderColor: color }]} />
@@ -51,6 +50,7 @@ function SearchIcon({ color }: { color: string }) {
 }
 
 function BriefsIcon({ color }: { color: string }) {
+  const icon = useStyles(makeIconStyles);
   return (
     <View style={icon.box}>
       <View style={[icon.doc, { borderColor: color }]}>
@@ -62,6 +62,7 @@ function BriefsIcon({ color }: { color: string }) {
 }
 
 function CalendarIcon({ color }: { color: string }) {
+  const icon = useStyles(makeIconStyles);
   return (
     <View style={icon.box}>
       <View style={[icon.calendar, { borderColor: color }]}>
@@ -86,16 +87,21 @@ export default function BottomTabBar({
   activeTab,
   onChangeTab,
   onPressAdd,
+  addOpen = false,
 }: {
   activeTab: TabKey;
   onChangeTab: (tab: TabKey) => void;
   onPressAdd: () => void;
+  /** The "Add a video" menu is open: the "+" turns into a close "×". */
+  addOpen?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
   function renderTab(tab: (typeof TABS)[number]) {
     const isActive = tab.key === activeTab;
-    const color = isActive ? ACTIVE : INACTIVE;
+    const color = isActive ? colors.cream : colors.creamMuted;
     return (
       <Pressable
         key={tab.key}
@@ -125,10 +131,12 @@ export default function BottomTabBar({
             style={styles.fab}
             onPress={onPressAdd}
             accessibilityRole="button"
-            accessibilityLabel="Add videos"
+            accessibilityLabel={addOpen ? 'Close add a video' : 'Add videos'}
           >
-            <View style={styles.plusH} />
-            <View style={styles.plusV} />
+            <View style={[styles.plusWrap, addOpen && styles.plusRotated]}>
+              <View style={styles.plusH} />
+              <View style={styles.plusV} />
+            </View>
           </Pressable>
         </View>
         {renderTab(TABS[2])}
@@ -138,7 +146,7 @@ export default function BottomTabBar({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   wrapper: {
     position: 'absolute',
     left: 13,
@@ -152,7 +160,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.3,
     shadowRadius: 9,
@@ -182,11 +190,20 @@ const styles = StyleSheet.create({
     borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.22,
     shadowRadius: 5,
     elevation: 12,
+  },
+  plusWrap: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plusRotated: {
+    transform: [{ rotate: '45deg' }],
   },
   plusH: {
     position: 'absolute',
@@ -204,7 +221,7 @@ const styles = StyleSheet.create({
   },
 });
 
-const icon = StyleSheet.create({
+const makeIconStyles = (colors: Colors) => StyleSheet.create({
   box: {
     width: 18,
     height: 18,

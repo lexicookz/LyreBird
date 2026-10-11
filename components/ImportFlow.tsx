@@ -10,7 +10,8 @@ import * as ImagePicker from 'expo-image-picker';
 import BottomSheet from './BottomSheet';
 import { PrimaryButton } from './ui';
 import { MAX_CLIP_SECONDS } from '../data/library';
-import { colors, fonts, pagePadding, radius } from '../theme';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
+import { ImagePickerAsset } from 'expo-image-picker';
 
 /** Drives the import flow; render <ImportFlowUI> with what it returns. */
 export function useVideoImport() {
@@ -71,6 +72,7 @@ export function useVideoImport() {
 // ---------- photo-access sheet ----------
 
 function SmileTile() {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.tile}>
       <View style={styles.eyes}>
@@ -91,6 +93,8 @@ export function PhotoAccessSheet({
   onContinue: () => void;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
   const ios = Platform.OS === 'ios';
   return (
     <BottomSheet visible={visible} onClose={onClose}>
@@ -144,6 +148,7 @@ export function ImportBar({
   /** Distance from the bottom of the screen (sits just above the tab bar). */
   bottom: number;
 }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={[styles.bar, { bottom }]}>
       <View style={{ flex: 1, gap: 2 }}>
@@ -173,7 +178,8 @@ export function ImportBar({
   );
 }
 
-const styles = StyleSheet.create({
+
+const makeStyles = (colors: Colors) => StyleSheet.create({
   // sheet
   tile: {
     width: 52,
@@ -192,7 +198,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 7,
     borderRadius: 2,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.onPastel,
   },
   smile: {
     width: 16,
@@ -201,7 +207,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 8,
     borderWidth: 1.8,
     borderTopWidth: 0,
-    borderColor: colors.ink,
+    borderColor: colors.onPastel,
   },
   sheetTitle: {
     fontFamily: fonts.display,
@@ -274,7 +280,7 @@ const styles = StyleSheet.create({
     paddingLeft: 16,
     paddingRight: 12,
     paddingVertical: 13,
-    shadowColor: colors.ink,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -288,7 +294,7 @@ const styles = StyleSheet.create({
   barSub: {
     fontFamily: fonts.body,
     fontSize: 11,
-    color: 'rgba(251,247,244,0.6)',
+    color: colors.creamSoft,
   },
   barCancel: {
     width: 28,
@@ -301,7 +307,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 2,
     borderRadius: 2,
-    backgroundColor: 'rgba(251,247,244,0.6)',
+    backgroundColor: colors.creamSoft,
   },
   barButton: {
     backgroundColor: colors.peach,
@@ -315,3 +321,6 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
 });
+
+
+

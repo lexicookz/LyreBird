@@ -5,8 +5,24 @@ import {
   ANALYSIS_MS,
   analysisProgress,
   clipsFromAssets,
+  uploadToAnalyze,
   useLibrary,
 } from '../data/library';
+
+jest.mock('expo-file-system', () => ({
+  File: class extends Blob {
+    uri: string;
+
+    constructor(uri: string) {
+      super(['video'], { type: 'video/mp4' });
+      this.uri = uri;
+    }
+
+    get name() {
+      return this.uri.split('/').pop() ?? 'video.mp4';
+    }
+  },
+}));
 
 function asset(fileName: string, durationMs: number): ImagePickerAsset {
   return { uri: `file:///${fileName}`, fileName, duration: durationMs, width: 1080, height: 1920 };
@@ -30,6 +46,53 @@ describe('library data', () => {
     expect(analysisProgress(clip, 1_000_000)).toBe(0);
     expect(analysisProgress(clip, 1_000_000 + ANALYSIS_MS / 2)).toBeCloseTo(0.5);
     expect(analysisProgress(clip, 1_000_000 + ANALYSIS_MS * 2)).toBe(1);
+  });
+
+  test('upload sends an Expo File part and returns the analysis from the worker envelope', async () => {
+    const originalFormData = global.FormData;
+    const append = jest.fn();
+    global.FormData = class {
+      append = append;
+    } as unknown as typeof FormData;
+    const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'success',
+        data: {
+          hook: 'Opening hook',
+          transcript: null,
+          onScreenText: [],
+          shotBeats: [],
+          pacing: null,
+          cta: null,
+          format: 'talking_head',
+          funnelStage: 'TOFU',
+        },
+      }),
+    } as Response);
+
+    try {
+      const result = await uploadToAnalyze({
+        uri: 'file:///cache/temporary.mp4',
+        fileName: 'original-video.mp4',
+      });
+
+      expect(append).toHaveBeenCalledTimes(1);
+      const uploadedFile = append.mock.calls[0][1];
+      expect(uploadedFile).toBeInstanceOf(Blob);
+      expect(uploadedFile).toMatchObject({
+        name: 'original-video.mp4',
+        type: 'video/mp4',
+      });
+      expect(fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ method: 'POST', body: expect.any(Object) })
+      );
+      expect(result.hook).toBe('Opening hook');
+    } finally {
+      fetch.mockRestore();
+      global.FormData = originalFormData;
+    }
   });
 
   describe('useLibrary', () => {

@@ -4,7 +4,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { toISODate } from '../data/calendar';
-import { colors, fonts, radius } from '../theme';
+import { fonts, radius, Colors, useStyles } from '../theme';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -27,6 +27,7 @@ export default function MonthGrid({
   marks?: Map<string, DayMark>;
   onSelect: (iso: string) => void;
 }) {
+  const styles = useStyles(makeStyles);
   const leading = (new Date(year, month, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (number | null)[] = [
@@ -67,7 +68,7 @@ export default function MonthGrid({
                   ]}
                 >
                   <View style={[styles.dayNumber, isToday && styles.today]}>
-                    <Text style={[styles.dayText, isToday && styles.todayText]}>{day}</Text>
+                    <Text style={[styles.dayText, mark && !isToday && styles.dayTextMarked, isToday && styles.todayText]}>{day}</Text>
                   </View>
                   {mark && <View style={styles.marker} />}
                 </Pressable>
@@ -80,7 +81,7 @@ export default function MonthGrid({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Colors) => StyleSheet.create({
   grid: {
     gap: 5,
   },
@@ -126,6 +127,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemiBold,
     fontSize: 13,
     color: colors.ink,
+  },
+  dayTextMarked: {
+    color: colors.onPastel,
   },
   todayText: {
     color: colors.cream,
