@@ -10,7 +10,14 @@ import type { Database } from '../supabase/database.types';
 
 // ---------- table rows ----------
 
-export type Clip = Database['public']['Tables']['clips']['Row'];
+/**
+ * A clip, as the app sees one.
+ *
+ * search_tsv is omitted on purpose: it is the full-text index Postgres
+ * maintains, it is never written by a client, and it can run to kilobytes
+ * per row. The app queries against it and never reads it.
+ */
+export type Clip = Omit<Database['public']['Tables']['clips']['Row'], 'search_tsv'>;
 export type Analysis = Database['public']['Tables']['analyses']['Row'];
 export type Brief = Database['public']['Tables']['briefs']['Row'];
 export type Brand = Database['public']['Tables']['brands']['Row'];

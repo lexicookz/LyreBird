@@ -15,6 +15,8 @@ import type { Analysis, Clip } from '../types';
 
 export const CLIPS_BUCKET = 'clips';
 
+
+
 /** Where the worker lives. Same variable the analysis call already uses. */
 const WORKER_URL = (
   process.env.EXPO_PUBLIC_WORKER_URL ?? 'http://localhost:8000'
@@ -26,6 +28,12 @@ export const LIBRARY_PAGE_SIZE = 24;
 export type LibrarySort = 'newest' | 'oldest';
 
 export type LibraryQuery = {
+  /**
+   * Full-text search over the clip's title, tags, hook, on-screen text and
+   * transcript. Matched by Postgres against a tsvector, so it finds a word
+   * inside a transcript the app has never downloaded.
+   */
+  search?: string;
   /** Clips carrying every one of these tags. Empty or absent means no filter. */
   tags?: string[];
   sort?: LibrarySort;
@@ -66,9 +74,24 @@ export async function fetchLibrary(query: LibraryQuery = {}): Promise<LibraryPag
   let clipsQuery = supabase
     .from('clips')
     // count: 'exact' is what makes hasMore answerable without a second query.
-    .select('*', { count: 'exact' })
+    // Columns listed rather than '*' so search_tsv stays on the server: it
+    // is the full-text index, it can run to kilobytes a row, and nothing on
+    // the phone reads it. Written as one literal because that is what the
+    // client infers the row type from. A new column has to be added here.
+    .select(
+      'id,owner_id,recording_id,storage_path,thumbnail_path,thumbnail_url,title,tags,duration_seconds,position_in_parent,status,error_message,created_at,updated_at',
+      { count: 'exact' }
+    )
     .order('created_at', { ascending: query.sort === 'oldest' })
     .range(from, from + pageSize - 1);
+
+  const search = query.search?.trim();
+  if (search) {
+    // websearch accepts what people actually type -- quoted phrases, OR,
+    // a leading minus -- and does not throw on syntax a user got wrong,
+    // which plainto_ and to_tsquery both do.
+    clipsQuery = clipsQuery.textSearch('search_tsv', search, { type: 'websearch' });
+  }
 
   if (query.tags?.length) {
     // contains, not overlaps: picking two tags should narrow the list rather
