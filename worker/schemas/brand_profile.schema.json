@@ -1,0 +1,59 @@
+{
+  "additionalProperties": false,
+  "description": "What Adapt knows about who the brief is for. Built from a brands row.",
+  "properties": {
+    "constraints": {
+      "default": [],
+      "description": "Words and claims the brief must avoid.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Constraints",
+      "type": "array"
+    },
+    "goal": {
+      "description": "What the content should get viewers to do.",
+      "title": "Goal",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "niche": {
+      "description": "The niche, person or brand the content is about.",
+      "title": "Niche",
+      "type": "string"
+    },
+    "style_profile": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Style Profile"
+    },
+    "target_audience": {
+      "title": "Target Audience",
+      "type": "string"
+    },
+    "tone": {
+      "title": "Tone",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "niche",
+    "target_audience",
+    "tone",
+    "goal"
+  ],
+  "title": "BrandProfile",
+  "type": "object"
+}

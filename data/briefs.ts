@@ -52,6 +52,9 @@ export function briefFromAnalysis(clip: Clip, analysis: TypedAnalysis, brandId: 
     cta: analysis.payload.cta || null,
     hashtags: [],
     status: 'draft',
+    payload: null,
+    prompt_version: null,
+    model_version: null,
     created_at: now,
     updated_at: now,
   };

@@ -86,34 +86,46 @@ export type Database = {
       }
       brands: {
         Row: {
+          constraints: string[]
           created_at: string
+          goal: string | null
           id: string
           keywords: string[]
           name: string
+          niche: string | null
           owner_id: string
           product_summary: string | null
+          style_profile: Json | null
           target_audience: string | null
           tone_of_voice: string | null
           updated_at: string
         }
         Insert: {
+          constraints?: string[]
           created_at?: string
+          goal?: string | null
           id?: string
           keywords?: string[]
           name: string
+          niche?: string | null
           owner_id: string
           product_summary?: string | null
+          style_profile?: Json | null
           target_audience?: string | null
           tone_of_voice?: string | null
           updated_at?: string
         }
         Update: {
+          constraints?: string[]
           created_at?: string
+          goal?: string | null
           id?: string
           keywords?: string[]
           name?: string
+          niche?: string | null
           owner_id?: string
           product_summary?: string | null
+          style_profile?: Json | null
           target_audience?: string | null
           tone_of_voice?: string | null
           updated_at?: string
@@ -139,7 +151,10 @@ export type Database = {
           hashtags: string[]
           hook: string | null
           id: string
+          model_version: string | null
           owner_id: string
+          payload: Json | null
+          prompt_version: string | null
           script: string | null
           shot_list: Json | null
           status: string
@@ -155,7 +170,10 @@ export type Database = {
           hashtags?: string[]
           hook?: string | null
           id?: string
+          model_version?: string | null
           owner_id: string
+          payload?: Json | null
+          prompt_version?: string | null
           script?: string | null
           shot_list?: Json | null
           status?: string
@@ -171,7 +189,10 @@ export type Database = {
           hashtags?: string[]
           hook?: string | null
           id?: string
+          model_version?: string | null
           owner_id?: string
+          payload?: Json | null
+          prompt_version?: string | null
           script?: string | null
           shot_list?: Json | null
           status?: string
