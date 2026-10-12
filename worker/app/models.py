@@ -95,6 +95,10 @@ class Clip(_Base):
     tags: list[str] = []
     duration_seconds: Decimal | None = None
     position_in_parent: int | None = None
+    # sha256 of the file at storage_path, set when the clip is analysed. Goes
+    # stale if /prepare re-encodes the file afterwards, so the worker rehashes
+    # what it downloads rather than trusting this.
+    video_hash: str | None = None
     created_at: datetime
     updated_at: datetime
 

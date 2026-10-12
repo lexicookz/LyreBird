@@ -18,6 +18,7 @@ jest.mock('../lib/clips', () => ({
   fetchLibrary: jest.fn(),
   fetchTags: jest.fn(async () => []),
   uploadClip: jest.fn(),
+  prepareClip: jest.fn(),
   requestAnalysis: jest.fn(),
   markAnalysisFailed: jest.fn(),
   deleteClip: jest.fn(),
@@ -132,6 +133,7 @@ describe('library data', () => {
       clipsApi.uploadClip.mockImplementation(async (_userId: string, a: ImagePickerAsset) =>
         clipRow(`db-${a.fileName}`, a.fileName ?? 'clip', 'processing')
       );
+      clipsApi.prepareClip.mockResolvedValue(undefined);
       clipsApi.requestAnalysis.mockResolvedValue(undefined);
       clipsApi.markAnalysisFailed.mockResolvedValue(undefined);
       clipsApi.deleteClip.mockResolvedValue(undefined);
@@ -159,6 +161,43 @@ describe('library data', () => {
 
       expect(result.current.clips.map((c) => c.id)).toEqual(['db-one.mp4', 'db-two.mp4']);
       expect(result.current.lastImportCount).toBe(2);
+      expect(result.current.error).toBeNull();
+    });
+
+    test('prepares each clip before analysing it', async () => {
+      const order: string[] = [];
+      clipsApi.prepareClip.mockImplementation(async (id: string) => {
+        order.push(`prepare:${id}`);
+      });
+      clipsApi.requestAnalysis.mockImplementation(async (id: string) => {
+        order.push(`analyse:${id}`);
+      });
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+      await act(async () => {
+        await result.current.importVideos([asset('one.mp4', 10_000)]);
+      });
+
+      // Order is the point: prepare replaces the file with a 480p version
+      // and deletes the original, so analysing afterwards fetches the small
+      // one. Reversed, the analysis downloads a full phone capture and the
+      // original sits in the 1GB tier until prepare gets to it.
+      expect(order).toEqual(['prepare:db-one.mp4', 'analyse:db-one.mp4']);
+    });
+
+    test('a clip is still analysed when preparing it fails', async () => {
+      clipsApi.prepareClip.mockRejectedValue(new Error('ffmpeg fell over'));
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+      await act(async () => {
+        await result.current.importVideos([asset('one.mp4', 10_000)]);
+      });
+
+      // Downscaling is an optimisation. Losing it costs storage, not the
+      // import, and the worker records the reason on the row itself.
+      expect(clipsApi.requestAnalysis).toHaveBeenCalledWith('db-one.mp4');
       expect(result.current.error).toBeNull();
     });
 

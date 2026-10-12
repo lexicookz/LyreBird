@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from pathlib import Path
 from uuid import UUID
@@ -19,7 +20,7 @@ from app.gemini import (
     delete_file,
     upload_and_wait,
 )
-from app.prompts import PromptError, load as load_prompt, versions
+from app.prompts import PromptError, latest_version, load as load_prompt, versions
 from app.media import MediaError, downscale_to_480p, extract_thumbnail, probe_duration_seconds
 from app.models import Clip
 
@@ -206,6 +207,44 @@ class AnalyseResult(BaseModel):
     model_version: str
     prompt_version: str
     payload: dict
+    # True when the payload was copied from an earlier analysis of an
+    # identical file instead of costing a Gemini call. A new row is written
+    # either way, so this is the only way to tell from the response.
+    cached: bool = False
+
+
+def _cached_payload(
+    client, owner_id: UUID, video_hash: str, prompt_version: str
+) -> dict | None:
+    """An earlier analysis of this exact file, if there is one.
+
+    The free tier allows twenty generate_content calls a day per model for
+    the whole project, and most of them go on re-analysing the same few test
+    videos. Identical bytes through the same model and the same prompt
+    produce an answer we already have.
+
+    Keyed on all three of hash, model and prompt, because a new prompt
+    version exists precisely to produce a different answer -- serving the old
+    one would make a prompt change silently do nothing.
+
+    Scoped to the owner. Two people uploading the same video would both
+    benefit from sharing, but the worker runs with the service role, and
+    crossing the owner boundary here would make this the one place in the
+    schema that does. Not worth it for a cache.
+    """
+    response = (
+        client.table("analyses")
+        .select("payload, clips!inner(video_hash, owner_id)")
+        .eq("owner_id", str(owner_id))
+        .eq("clips.video_hash", video_hash)
+        .eq("model_version", settings.gemini_model)
+        .eq("prompt_version", prompt_version)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = response.data or []
+    return rows[0]["payload"] if rows else None
 
 
 @router.post("/{clip_id}/analyse", response_model=AnalyseResult)
@@ -265,6 +304,34 @@ def analyse_clip(
             detail=f"could not download {clip.storage_path!r} from {CLIPS_BUCKET}: {exc}",
         ) from exc
 
+    # Hash what was actually downloaded rather than trusting clips.video_hash:
+    # /prepare re-encodes the file in place, so a stored hash can describe a
+    # version of the video that no longer exists.
+    video_hash = hashlib.sha256(video_bytes).hexdigest()
+
+    # Resolved here rather than taken from analyse()'s return value, because
+    # the cache key needs it *before* the call it is trying to avoid.
+    resolved_version = prompt_version or latest_version("analyse")
+
+    reused = _cached_payload(client, clip.owner_id, video_hash, resolved_version)
+    if reused is not None:
+        # Skips the Files API upload as well as the generation -- on a free
+        # key the upload is the slow half and the call is the scarce one.
+        payload = reused
+        used_version = resolved_version
+    else:
+        payload, used_version = _generate(client, clip, video_bytes, prompt_version)
+
+    return _store(
+        client, clip, payload, used_version,
+        video_hash=video_hash, cached=reused is not None,
+    )
+
+
+def _generate(
+    client, clip: Clip, video_bytes: bytes, prompt_version: str | None
+) -> tuple[dict, str]:
+    """The uncached path: upload to Gemini, generate, hand back the payload."""
     uploaded_name: str | None = None
     with tempfile.TemporaryDirectory(prefix="lyrebird-analyse-") as tmp:
         source = Path(tmp) / Path(clip.storage_path).name
@@ -302,8 +369,20 @@ def analyse_clip(
             if uploaded_name:
                 delete_file(uploaded_name)
 
-    payload = result.model_dump(mode="json")
+    return result.model_dump(mode="json"), used_version
 
+
+def _store(
+    client, clip: Clip, payload: dict, used_version: str, video_hash: str, cached: bool
+) -> AnalyseResult:
+    """Write the analyses row and mark the clip ready.
+
+    A cache hit writes its own row rather than pointing at the one it copied.
+    The table is append-only and one row per run on purpose -- the app reads
+    the newest analysis for a clip, and a clip with no row of its own would
+    show as unanalysed however many identical videos had been analysed before
+    it.
+    """
     inserted = (
         client.table("analyses")
         .insert(
@@ -324,8 +403,13 @@ def analyse_clip(
     # Only now is the clip genuinely ready: there is an analysis to show.
     # error_message is cleared too — a message from an earlier failed run
     # sitting beside status 'ready' reads as a current problem.
+    #
+    # video_hash goes in the same write, and only on success, because that is
+    # exactly what the column means: this file has an analysis, so a later
+    # clip with the same bytes can reuse it. Written on the failure path it
+    # would advertise a cache entry that does not exist.
     client.table("clips").update(
-        {"status": "ready", "error_message": None}
+        {"status": "ready", "error_message": None, "video_hash": video_hash}
     ).eq("id", str(clip.id)).execute()
 
     return AnalyseResult(
@@ -334,6 +418,7 @@ def analyse_clip(
         model_version=settings.gemini_model,
         prompt_version=used_version,
         payload=payload,
+        cached=cached,
     )
 
 

@@ -208,6 +208,7 @@ jest.mock('../lib/clips', () => {
       rows.clips = [clip, ...rows.clips];
       return clip;
     }),
+    prepareClip: jest.fn(async () => undefined),
     requestAnalysis: jest.fn(async (clipId: string) => {
       rows.clips = rows.clips.map((c) => (c.id === clipId ? { ...c, status: 'processing' } : c));
     }),

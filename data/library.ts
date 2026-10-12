@@ -18,6 +18,7 @@ import {
   fetchLibrary,
   fetchTags,
   markAnalysisFailed,
+  prepareClip,
   requestAnalysis,
   uploadClip,
   type LibraryQuery,
@@ -308,6 +309,20 @@ export function useLibrary() {
           const placeholderId = placeholders[i].id;
           try {
             const clip = await uploadClip(userId, asset);
+
+            // Downscale first, so the analysis fetches the 480p version and
+            // the full-size original stops occupying the 1GB free tier.
+            //
+            // Not the same swallow that was removed above, though it looks
+            // like one. That case left the clip on 'processing' forever with
+            // nothing written anywhere, so a broken worker URL was invisible.
+            // Here the worker records its own failure on the row, the clip
+            // is still analysable at full size, and the analysis a line
+            // later surfaces anything that would also have broken this.
+            // Reporting a transcode failure on an import that otherwise
+            // worked would be noise.
+            await prepareClip(clip.id).catch(() => {});
+
             // Analysis is allowed to fail on its own -- the clip is saved
             // either way, so a failed analysis is not a lost upload. What it
             // is not allowed to do is fail silently: this used to be
