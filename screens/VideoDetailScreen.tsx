@@ -55,6 +55,11 @@ export default function VideoDetailScreen({
   const payload = video.status === 'ready' ? analysis?.payload : undefined;
   const stage = payload ? stages[payload.funnelStage] : undefined;
   const beats = payload?.shotBeats ?? [];
+  const whyItWorks = (payload?.whyItWorks ?? []).filter((r) => !!r?.trim());
+  const audioLines = [
+    ['Music', payload?.audioStyle?.backgroundMusic],
+    ['Voiceover', payload?.audioStyle?.voiceover],
+  ].filter(([, text]) => !!text) as [string, string][];
   const shownBeats = showAllBeats ? beats : beats.slice(0, BEATS_PREVIEW);
   const words = payload?.transcript?.trim().split(/\s+/).filter(Boolean).length ?? 0;
   const meta = [formatDuration(video.duration_seconds), video.title].filter(Boolean).join(' · ');
@@ -106,11 +111,28 @@ export default function VideoDetailScreen({
           </View>
         ) : (
           <>
+            {!!payload.description?.trim() && (
+              <Text style={styles.cardBody}>{payload.description}</Text>
+            )}
             <View style={[styles.card, { backgroundColor: colors.green, gap: 8 }]}>
               <Eyebrow color={colors.onPastelBody}>Hook · 0:00–0:03 verbatim</Eyebrow>
               <Text style={styles.hook}>“{payload.hook}”</Text>
               {!!payload.pacing && <Text style={styles.hookNote}>{payload.pacing}</Text>}
             </View>
+
+            {whyItWorks.length > 0 && (
+              <View style={{ gap: 4 }}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionLabel}>WHY IT WORKS</Text>
+                </View>
+                {whyItWorks.map((reason, i) => (
+                  <View key={i} style={[styles.beat, i > 0 && styles.beatDivider]}>
+                    <Text style={styles.beatIndex}>{String(i + 1).padStart(2, '0')}</Text>
+                    <Text style={styles.beatText}>{reason}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {beats.length > 0 && (
               <View style={{ gap: 4 }}>
@@ -137,6 +159,22 @@ export default function VideoDetailScreen({
               <View style={[styles.card, { backgroundColor: colors.pink, gap: 6 }]}>
                 <Eyebrow color={colors.onPastelBody}>Call to action</Eyebrow>
                 <Text style={styles.pastelBody}>{payload.cta}</Text>
+              </View>
+            )}
+
+            {audioLines.length > 0 && (
+              <View style={{ gap: 4 }}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionLabel}>AUDIO</Text>
+                </View>
+                {audioLines.map(([label, text], i) => (
+                  <View key={label} style={[styles.beat, i > 0 && styles.beatDivider]}>
+                    <Text style={styles.beatText}>
+                      <Text style={{ fontFamily: fonts.bodySemiBold }}>{label}: </Text>
+                      {text}
+                    </Text>
+                  </View>
+                ))}
               </View>
             )}
 
