@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # secret, and every environment should run the same model unless someone
     # deliberately overrides GEMINI_MODEL. Written to analyses.model_version,
     # so changing it here is what makes old rows distinguishable from new.
-    gemini_model: str = Field(default="gemini-3.6-flash", min_length=1)
+    gemini_model: str = Field(default="gemini-3.8-flash", min_length=1)
 
     @field_validator("*", mode="after")
     @classmethod
