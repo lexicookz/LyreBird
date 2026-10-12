@@ -66,8 +66,9 @@ class DownloadStorage:
 
 
 class TrackingQuery:
-    def __init__(self, fake_client):
+    def __init__(self, fake_client, table):
         self.fake_client = fake_client
+        self.table_name = table
         self.update_data = None
 
     def select(self, *_args, **_kwargs):
@@ -77,7 +78,19 @@ class TrackingQuery:
         self.update_data = data
         return self
 
+    def insert(self, data):
+        self.fake_client.inserts.append((self.table_name, data))
+        self.update_data = None
+        self._inserted = data
+        return self
+
     def eq(self, *_args, **_kwargs):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
         return self
 
     def execute(self):
@@ -85,18 +98,28 @@ class TrackingQuery:
             self.fake_client.updates.append(self.update_data)
             return SimpleNamespace(data=[self.update_data])
 
+        if self.table_name == "analyses":
+            # The analysis cache lookup. These tests are about what happens
+            # when Gemini is reached, so it has to miss -- a hit would skip
+            # the call they are exercising.
+            return SimpleNamespace(data=self.fake_client.cached_analyses)
+
         return SimpleNamespace(data=self.fake_client.rows)
 
 
 class TrackingClient:
-    def __init__(self, rows):
+    def __init__(self, rows, cached_analyses=None):
         self.rows = rows
         self.updates = []
+        self.inserts = []
+        # Empty by default: no earlier analysis of this file, so the cache
+        # misses and the model is called.
+        self.cached_analyses = cached_analyses or []
         self.storage = DownloadStorage()
 
     def table(self, name):
-        assert name == "clips"
-        return TrackingQuery(self)
+        assert name in ("clips", "analyses"), name
+        return TrackingQuery(self, name)
 
 class SuccessfulBucket:
     def download(self, path):

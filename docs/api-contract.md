@@ -4,11 +4,48 @@ Endpoints exposed by the FastAPI worker in `/worker`. The mobile app talks to
 Supabase directly for everything else; only work that needs ffmpeg or the Gemini
 key belongs in this table.
 
+## Before the table
+
+**Where it is.** `https://lyrebird-worker.onrender.com`, redeployed from `main`
+automatically. The app reads it from `EXPO_PUBLIC_WORKER_URL`, which is in
+`.env.example` already — those are inlined at build time, so a change needs
+`npx expo start -c` and not a reload. Point it at `http://localhost:8000` only
+if you are working on the worker itself; on a phone that has to be the
+machine's LAN address, because `localhost` is the phone.
+
+**The free instance sleeps after 15 minutes idle.** The first request after a
+quiet spell takes about 50 seconds before the handler even starts. That is a
+cold start, not a hang, and it stacks on top of the timings below.
+
+**No authentication.** The worker takes no token, header or key. It is
+reachable by anyone who knows the URL, which is a thing to fix before this is
+public and is deliberately not a thing you have to work around today. Do not
+send the Supabase anon key to it; it does not read one.
+
+**CORS is `allow_origins=["*"]`** (`app/main.py`), so a browser client is not
+blocked. Narrowed before anything ships.
+
+**Everything is `POST` with no body unless the table says otherwise.** Ids go
+in the path, options in the query string.
+
+## Caching
+
+`/clips/{clip_id}/analyse` reuses an earlier analysis when the file it
+downloads hashes to something already analysed **for the same owner, by the
+same model, with the same prompt version**. A hit writes its own `analyses`
+row exactly as a fresh run does, so nothing downstream changes — the only
+difference visible to a caller is `cached: true` and a response in seconds
+rather than minutes.
+
+This exists because the Gemini key is on the free tier: twenty
+`generate_content` calls a day, per model, shared by everyone. Re-analysing
+the same test video is free; changing the prompt version is not, by design.
+
 | Endpoint                        | Method | Request                                                                 | Response                                                                                                                                                | Status                                                                                                                                                                                                                                                                                                                       |
 | ------------------------------- | ------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/health`                       | GET    | —                                                                       | `{ "status": "ok", "database": "ok" }`                                                                                                                  | `200` healthy · `503` database unreachable (adds `detail`)                                                                                                                                                                                                                                                                   |
 | `/clips/{clip_id}/prepare`      | POST   | no body; `clip_id` path param (UUID)                                    | `PrepareResult`: `clip_id`, `storage_path`, `thumbnail_path`, `original_bytes`, `clip_bytes`, `thumbnail_bytes`, `duration_seconds`, `original_deleted`, `already_prepared` | `200` prepared, or already prepared (`already_prepared: true`, byte counts `0`) · `404` no clip row, or the original could not be downloaded from `clips` · `409` `storage_path` is not under `<owner_id>/`, or the prepared name would overwrite the original · `422` ffmpeg failed (`MediaError`) · `500` files uploaded but the `clips` row update returned no rows |
-| `/clips/{clip_id}/analyse`      | POST   | no body; `clip_id` path param (UUID); optional `?prompt_version=analyse-v2` | `AnalyseResult`: `analysis_id`, `clip_id`, `model_version`, `prompt_version`, `payload` (an `AnalysisResult`, see `app/analysis.py`)                     | `200` analysed · `400` unknown `prompt_version` · `404` no clip row, or the clip could not be downloaded from `clips` · `409` `storage_path` is not under `<owner_id>/` · `422` `GeminiError` · `429` `GeminiQuotaExceeded` (usually adds `Retry-After`) · `504` `GeminiTimeout` · `500` analysis succeeded but the `analyses` insert returned no rows                                      |
+| `/clips/{clip_id}/analyse`      | POST   | no body; `clip_id` path param (UUID); optional `?prompt_version=analyse-v2` | `AnalyseResult`: `analysis_id`, `clip_id`, `model_version`, `prompt_version`, `payload` (an `AnalysisResult`, see `app/analysis.py`), `cached`                     | `200` analysed · `400` unknown `prompt_version` · `404` no clip row, or the clip could not be downloaded from `clips` · `409` `storage_path` is not under `<owner_id>/` · `422` `GeminiError` · `429` `GeminiQuotaExceeded` (usually adds `Retry-After`) · `504` `GeminiTimeout` · `500` analysis succeeded but the `analyses` insert returned no rows                                      |
 | `/clips/prompt-versions`        | GET    | —                                                                       | `["analyse-v1", "analyse-v2"]` — oldest first                                                                                                            | `200`                                                                                                                                                                                                                                                                                                                        |
 | `/briefs`                       | POST   | `BriefRequest`: `{ "clip_id": UUID, "brand_id": UUID }`; optional `?prompt_version=brief-v1` | `BriefResponse`: `brief_id`, `clip_id`, `brand_id`, `analysis_id`, `model_version`, `prompt_version`, `hook`, `script`, `shot_list`, `caption`, `hashtags`, `cta`, `payload` | `200` written · `400` unknown `prompt_version` · `403` clip and brand have different `owner_id` · `404` no clip, or no brand · `409` the clip has no analysis yet, or the `brands` row will not map to a `BrandProfile` · `422` `GeminiError` · `429` `GeminiQuotaExceeded` (usually adds `Retry-After`) · `504` `GeminiTimeout` · `500` brief generated but the `briefs` insert returned no rows |
 | `/briefs/{brief_id}/regenerate` | POST   | no body; `brief_id` path param (UUID); optional `?prompt_version=brief-v1` | `BriefResponse` — same shape; always a new row                                                                                                           | as `POST /briefs`, plus `404` no brief with that id                                                                                                                                                                                                                                                                          |

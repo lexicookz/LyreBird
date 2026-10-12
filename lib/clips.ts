@@ -195,6 +195,27 @@ export async function uploadClip(userId: string, asset: ImagePickerAsset): Promi
 }
 
 /**
+ * Ask the worker to downscale a clip and give it a thumbnail.
+ *
+ * Worth doing before the analysis rather than after: it replaces the file at
+ * `storage_path` with a 480p version and deletes the original, so the
+ * analysis downloads the smaller one. A phone capture is 1080p or 4K and
+ * runs to tens of megabytes; the free Supabase tier is 1GB in total, which
+ * is about a hundred untouched clips.
+ *
+ * Best effort by design. If this fails the clip is still there at full size
+ * and still analysable — the worker records the reason on the row itself —
+ * so the caller continues rather than treating it as a failed import.
+ */
+export async function prepareClip(clipId: string): Promise<void> {
+  const response = await fetch(`${WORKER_URL}/clips/${clipId}/prepare`, { method: 'POST' });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Could not prepare the clip (${response.status}). ${detail.slice(0, 200)}`);
+  }
+}
+
+/**
  * Ask the worker to analyse a clip that is already in storage.
  *
  * This is the real endpoint -- it reads the video from storage, writes the
