@@ -27,31 +27,64 @@ class Signal:
     times: np.ndarray  # timestamp of the later frame of each pair
 
 
-def frame_difference(path: Path, width: int = WIDTH) -> Signal:
+def read_frames(path: Path, width: int = WIDTH) -> tuple[float, list[np.ndarray], np.ndarray]:
+    """Decode to small greyscale frames, with each frame's real timestamp.
+
+    The timestamps come from the container (CAP_PROP_POS_MSEC) rather than
+    from index / fps, because a phone screen recording is usually variable
+    frame rate: the recorder drops frames while the screen is still, which
+    is exactly while somebody is watching a video, and catches up during the
+    swipe. Dividing by an average frame rate would put every transition at
+    the wrong time, drifting further the longer the recording runs -- and it
+    would look like the detector being inaccurate rather than the clock
+    being wrong.
+
+    Falls back to index / fps when the container has no usable timestamps,
+    which is the case for some encoders.
+    """
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
         raise RuntimeError(f"could not open {path}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-    diffs: list[float] = []
-    prev = None
+    frames: list[np.ndarray] = []
+    stamps: list[float] = []
     while True:
         ok, frame = cap.read()
         if not ok:
             break
+        # After the decode, not before. Measured on this build: before the
+        # read it reports 0 for the first two frames, which shifts every
+        # later timestamp one frame early -- 33ms of error that looks like
+        # detector inaccuracy. After the read it is the frame's own time.
+        position = cap.get(cv2.CAP_PROP_POS_MSEC)
         h, w = frame.shape[:2]
         small = cv2.resize(
             frame, (width, max(1, round(h * width / w))), interpolation=cv2.INTER_AREA
         )
-        grey = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32)
-        if prev is not None:
-            diffs.append(float(np.mean(np.abs(grey - prev))))
-        prev = grey
+        frames.append(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32))
+        stamps.append(position / 1000.0)
     cap.release()
 
-    arr = np.asarray(diffs, dtype=np.float32)
-    times = (np.arange(len(arr)) + 1) / fps
-    return Signal(fps=fps, diffs=arr, times=times)
+    times = np.asarray(stamps, dtype=np.float64)
+    # Some backends return all zeros, or go backwards. Either makes the
+    # timestamps useless, and a silent fallback is better than nonsense.
+    usable = len(times) > 1 and times[-1] > 0 and bool(np.all(np.diff(times) >= 0))
+    if not usable:
+        times = np.arange(len(frames), dtype=np.float64) / fps
+
+    return fps, frames, times
+
+
+def frame_difference(path: Path, width: int = WIDTH) -> Signal:
+    fps, frames, times = read_frames(path, width)
+
+    diffs = np.asarray(
+        [float(np.mean(np.abs(frames[i] - frames[i - 1]))) for i in range(1, len(frames))],
+        dtype=np.float32,
+    )
+    # Each difference belongs to the later frame of the pair.
+    return Signal(fps=fps, diffs=diffs, times=times[1:])
 
 
 def events(signal: Signal, threshold: float, min_gap: float = 0.35) -> list[float]:
