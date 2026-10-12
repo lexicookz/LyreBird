@@ -206,6 +206,8 @@ caveat, and the API contract carries it where a caller will see it.
 
 ### Decision log
 
+Tickets deferred rather than built are in `decision-log.md`.
+
 | Date | Decision |
 | --- | --- |
 | 2026-10-12 | Criterion and thresholds fixed (this document). Outcome pending five real recordings. Frame-differencing alone already ruled out on evidence that does not depend on the corpus being synthetic. |
