@@ -238,6 +238,56 @@ def delete_file(name: str) -> None:
         pass
 
 
+def _describe_empty_response(response) -> str:
+    """Why the SDK could not give us a parsed object.
+
+    This used to say "returned a response that does not match the schema"
+    whatever the cause, which is a confident claim about the model's output
+    and was wrong in the one case we actually hit: the JSON was fine as far
+    as it went, and simply stopped mid-word because the response ran out of
+    room. Hours went into looking for the mismatched field.
+
+    finish_reason says which it was, so report it. MAX_TOKENS is a budget to
+    raise; SAFETY and RECITATION are the model declining and no amount of
+    retrying changes them; STOP with unparseable text is the only case that
+    really is a malformed response.
+    """
+    candidate = next(iter(getattr(response, "candidates", None) or []), None)
+    finish = getattr(candidate, "finish_reason", None)
+    finish_name = getattr(finish, "name", None) or (str(finish) if finish else "unknown")
+
+    usage = getattr(response, "usage_metadata", None)
+    counts = {
+        "prompt": getattr(usage, "prompt_token_count", None),
+        "output": getattr(usage, "candidates_token_count", None),
+        "thinking": getattr(usage, "thoughts_token_count", None),
+    }
+    tokens = ", ".join(f"{k}={v}" for k, v in counts.items() if v is not None)
+    tokens = f" Tokens: {tokens}." if tokens else ""
+
+    raw = (getattr(response, "text", "") or "")[:500]
+
+    if finish_name == "MAX_TOKENS":
+        return (
+            "Gemini ran out of output tokens before finishing the JSON, so the "
+            "response is cut off rather than wrong. Raising max_output_tokens is "
+            "the fix -- note that on a thinking model the reasoning is charged to "
+            f"the same budget.{tokens} Truncated response: {raw}"
+        )
+
+    if finish_name in {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT"}:
+        return (
+            f"Gemini declined to answer for this video (finish_reason "
+            f"{finish_name}). This is the model refusing, not a bad request, so "
+            f"retrying it unchanged will refuse again.{tokens}"
+        )
+
+    return (
+        f"Gemini returned a response that does not match the schema "
+        f"(finish_reason {finish_name}).{tokens} Response: {raw}"
+    )
+
+
 def _call_model(contents: list, schema: type[BaseModel]) -> BaseModel:
     """One model call, retried on transient failures, with BE-14's validation.
 
@@ -303,13 +353,13 @@ def _call_model(contents: list, schema: type[BaseModel]) -> BaseModel:
         ) from last
 
     # With a response_schema the SDK parses and validates for us, and leaves
-    # `parsed` as None when the model returned something that does not fit.
-    # That is the loud failure: the raw text goes in the message so the cause
-    # is visible, but nothing is persisted.
+    # `parsed` as None when the model returned something it could not use.
+    # Nothing is persisted either way, but *why* it could not be used is the
+    # difference between a prompt problem and a budget problem, so the
+    # message has to distinguish them -- see _describe_empty_response.
     parsed = getattr(response, "parsed", None)
     if parsed is None:
-        raw = (getattr(response, "text", "") or "")[:500]
-        raise GeminiError(f"Gemini returned a response that does not match the schema: {raw}")
+        raise GeminiError(_describe_empty_response(response))
 
     if not isinstance(parsed, schema):
         # Defensive: older SDK versions hand back a dict here.
