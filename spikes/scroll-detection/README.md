@@ -184,6 +184,7 @@ python -m venv .venv
 .venv/Scripts/python.exe measure_two_stage.py    # with the vertical-travel confirm
 .venv/Scripts/python.exe inspect_fps.py          # lists every call, hit or false
 .venv/Scripts/python.exe cost.py                 # throughput and memory
+.venv/Scripts/python.exe clip_accuracy.py        # the BE-23 decision number
 ```
 
 | file | what it is |
@@ -195,6 +196,7 @@ python -m venv .venv
 | `make_corpus.py` | builds the stand-in recordings |
 | `inspect_fps.py` | names every candidate so false ones can be looked at |
 | `cost.py` | throughput and memory |
+| `clip_accuracy.py` | the BE-23 metric: clips correct, and which option the rule picks |
 | `check_recording.py` | validates incoming recordings before they are measured against |
 
 Nothing here is imported by the worker or the app. It is a spike: if the
