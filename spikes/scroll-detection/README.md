@@ -131,16 +131,48 @@ something a request waits on.
 
 ## To actually close BE-21
 
-**Five real screen recordings.** 60–90 seconds each of normal scrolling,
-with the times you swiped written down — a rough `0:14, 0:31, 0:52` is
-enough, the matching tolerance is half a second. Variety is the point: a
-couple of fast flick-throughs, one where you linger, and at least one where
-you open a comment sheet or scroll back up, since those are the cases most
-likely to break it.
+**Five real screen recordings.** The spec, in the order it matters:
 
-Drop them in `corpus/` with a ground-truth file in the same shape
-`make_corpus.py` writes, and `measure.py` and `measure_two_stage.py` run
-against them unchanged.
+1. **Phone screen recorder, on a real feed** — TikTok, Reels or Shorts. The
+   UI chrome is part of what is being tested, so a feed in a browser is not
+   the same thing.
+2. **60–90 seconds each**, portrait, at least 20fps (any phone default is
+   fine). Audio is ignored.
+3. **Write down when you swiped**, as seconds from the start of the video:
+   `14, 31, 52`. Rough is fine — a call within half a second counts as a
+   hit. Times from the phone clock, or from before a trim, are the one
+   mistake that produces a wrong number rather than an error.
+4. **Do not trim or edit afterwards.** Trimming shifts every timestamp.
+5. **Vary them.** Two fast flick-throughs, one where you linger on a video,
+   one with slow deliberate drags. At least one should include **a comment
+   sheet opening, or a scroll back up, or a half-swipe that snaps back** —
+   those are vertical movement that is *not* a transition, and the most
+   likely way this approach breaks. A corpus that avoids them flatters the
+   detector.
+
+Drop the files in `corpus/` and list them in `corpus/ground-truth.json`:
+
+```json
+[
+  { "recording": "real1.mp4", "scroll_transitions": [14, 31, 52], "synthetic": false }
+]
+```
+
+Then, before trusting any number:
+
+```
+.venv/Scripts/python.exe check_recording.py
+```
+
+It catches the failure modes that otherwise look like detector error —
+landscape files, timestamps outside the recording, transitions too close
+together to tell apart, frame rates too low to see a swipe. After that,
+`measure.py` and `measure_two_stage.py` run unchanged.
+
+Variable frame rate is handled: phone recorders drop frames while the
+screen is still, so timestamps come from the container rather than from an
+average frame rate. Computing them as `index / fps` put every transition
+progressively earlier than it happened.
 
 ## Running it
 
@@ -163,6 +195,7 @@ python -m venv .venv
 | `make_corpus.py` | builds the stand-in recordings |
 | `inspect_fps.py` | names every candidate so false ones can be looked at |
 | `cost.py` | throughput and memory |
+| `check_recording.py` | validates incoming recordings before they are measured against |
 
 Nothing here is imported by the worker or the app. It is a spike: if the
 approach survives real recordings, the detector is about 60 lines to port.

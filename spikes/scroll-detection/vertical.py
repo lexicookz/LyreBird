@@ -24,6 +24,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from detect import read_frames
+
 WIDTH = 64
 
 
@@ -35,28 +37,9 @@ class Candidate:
     coherence: float  # share of the run's frames moving the same way
 
 
-def _frames(path: Path, width: int = WIDTH) -> tuple[float, list[np.ndarray]]:
-    cap = cv2.VideoCapture(str(path))
-    if not cap.isOpened():
-        raise RuntimeError(f"could not open {path}")
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    out = []
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        h, w = frame.shape[:2]
-        small = cv2.resize(
-            frame, (width, max(1, round(h * width / w))), interpolation=cv2.INTER_AREA
-        )
-        out.append(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32))
-    cap.release()
-    return fps, out
-
-
 def measure(path: Path, times: list[float], window: float = 0.45) -> list[Candidate]:
     """For each candidate time, how far did the picture slide vertically."""
-    fps, frames = _frames(path)
+    _, frames, stamps = read_frames(path, WIDTH)
     if not frames:
         return []
     height = frames[0].shape[0]
@@ -64,8 +47,11 @@ def measure(path: Path, times: list[float], window: float = 0.45) -> list[Candid
 
     out = []
     for t in times:
-        lo = max(1, int((t - window) * fps))
-        hi = min(len(frames) - 1, int((t + window) * fps))
+        # Found by timestamp rather than t * fps: under a variable frame
+        # rate those are not the same frame, and the window would slide off
+        # the swipe it is supposed to be centred on.
+        lo = max(1, int(np.searchsorted(stamps, t - window, side="left")))
+        hi = min(len(frames) - 1, int(np.searchsorted(stamps, t + window, side="right")) - 1)
         shifts = []
         diffs = []
         for i in range(lo, hi + 1):
