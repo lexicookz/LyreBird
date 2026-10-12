@@ -225,6 +225,25 @@ export async function requestAnalysis(clipId: string): Promise<void> {
   }
 }
 
+/**
+ * Record on the clip that its analysis never happened.
+ *
+ * The worker writes 'failed' and the reason itself whenever the request
+ * reached it. This is for when it did not: an unreachable worker leaves
+ * nothing on the row at all, so the clip sits on 'processing' forever and a
+ * request that was never sent looks exactly like one still running. The app
+ * owns the clip under RLS, so it can say so itself.
+ *
+ * Deliberately does not throw. It is already the error path, and the caller
+ * has a message to show regardless of whether this write lands.
+ */
+export async function markAnalysisFailed(clipId: string, message: string): Promise<void> {
+  await supabase
+    .from('clips')
+    .update({ status: 'failed', error_message: message.slice(0, 1000) })
+    .eq('id', clipId);
+}
+
 /** Removes a clip, its analyses and its file. Briefs written from it are kept. */
 export async function deleteClip(clip: Clip): Promise<void> {
   // Rows first. A deleted file with a surviving row is a clip that looks

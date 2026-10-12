@@ -17,6 +17,7 @@ import {
   deleteClip,
   fetchLibrary,
   fetchTags,
+  markAnalysisFailed,
   requestAnalysis,
   uploadClip,
   type LibraryQuery,
@@ -307,10 +308,22 @@ export function useLibrary() {
           const placeholderId = placeholders[i].id;
           try {
             const clip = await uploadClip(userId, asset);
-            // Analysis is the slow part and is allowed to fail on its own --
-            // the clip is already saved, and the worker records the reason on
-            // the row, so a failed analysis is not a lost upload.
-            await requestAnalysis(clip.id).catch(() => {});
+            // Analysis is allowed to fail on its own -- the clip is saved
+            // either way, so a failed analysis is not a lost upload. What it
+            // is not allowed to do is fail silently: this used to be
+            // .catch(() => {}), which left the row on 'processing' with
+            // nothing written to it, so a worker that was never reached was
+            // indistinguishable from one still working and the screen waited
+            // forever. The worker records its own failures; this covers the
+            // ones where it never heard the request.
+            try {
+              await requestAnalysis(clip.id);
+            } catch (e) {
+              const message =
+                e instanceof Error ? e.message : 'Could not start the analysis.';
+              await markAnalysisFailed(clip.id, message);
+              setError(message);
+            }
           } catch (e) {
             markFailed(placeholderId);
             setError(e instanceof Error ? e.message : 'Could not save that video.');
@@ -338,8 +351,13 @@ export function useLibrary() {
       try {
         await requestAnalysis(clipId);
       } catch (e) {
+        const message = e instanceof Error ? e.message : 'Could not analyse that clip.';
+        // Both: markFailed is what the screen shows now, markAnalysisFailed
+        // is what survives the refresh on the next line. Without the second
+        // one the re-read puts the clip straight back on 'processing'.
         markFailed(clipId);
-        setError(e instanceof Error ? e.message : 'Could not analyse that clip.');
+        await markAnalysisFailed(clipId, message);
+        setError(message);
       }
       await refresh(false);
     },
