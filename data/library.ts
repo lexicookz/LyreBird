@@ -1,17 +1,28 @@
 // data/library.ts
-// The user's saved clips and their analyses, kept on the device for now.
+// The user's saved clips and their analyses, in Supabase.
 //
-// Two stand-ins live here until the backend exists:
-//   - storage: AsyncStorage instead of the `clips` / `analyses` tables
-//   - analysis: SIMULATED. There is no Gemini endpoint yet, so a clip marked
-//     'processing' turns 'ready' after ANALYSIS_MS with a sample analysis drawn
-//     from SAMPLE_PAYLOADS. The hooks it shows are not about the real video.
-// When the worker's analyse endpoint lands, replace `finishAnalysis` with a
-// poll of the clip's status and a read of its `analyses` row.
+// The app reads and writes the `clips` and `analyses` tables directly under
+// RLS, and video files live in the `clips` storage bucket at
+// `<user_id>/<filename>`. Only the Gemini call goes through the worker, which
+// is the one thing holding an API key.
+//
+// This replaced a local stand-in -- AsyncStorage for the rows and a simulated
+// analysis on a timer. The consequence worth knowing: the library is no longer
+// available offline, because it is no longer on the device.
+
 import { useCallback, useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ImagePickerAsset } from 'expo-image-picker';
-import { File } from 'expo-file-system';
+import { currentUserId } from './account';
+import {
+  deleteClip,
+  fetchLibrary,
+  fetchTags,
+  markAnalysisFailed,
+  requestAnalysis,
+  uploadClip,
+  type LibraryQuery,
+  type LibrarySort,
+} from '../lib/clips';
 import { mockAnalyses, mockClips } from './mockVideos';
 import type { AnalysisPayload, Clip, TypedAnalysis } from '../types';
 
@@ -23,8 +34,6 @@ export type LibraryState = {
 };
 
 const EMPTY: LibraryState = { clips: [], analyses: [], lastImportCount: null };
-const STORAGE_KEY = 'lyrebird.library';
-const OWNER_ID = mockClips[0]?.owner_id ?? 'local';
 
 /** How long a simulated analysis takes. */
 
@@ -69,18 +78,19 @@ const SAMPLE_PAYLOADS: AnalysisPayload[] = [
 ];
 
 // ---------- storage ----------
+//
+// Reading is a query, not a file read. There is no save(): every action
+// writes its own row and then re-reads, so the screen shows what the database
+// actually holds rather than what the app hoped it wrote.
 
-async function loadLibrary(): Promise<LibraryState> {
-  try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    return raw ? { ...EMPTY, ...JSON.parse(raw) } : EMPTY;
-  } catch {
-    return EMPTY;
-  }
-}
-
-function saveLibrary(state: LibraryState) {
-  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {});
+async function loadLibrary(query: LibraryQuery = {}): Promise<LibraryState & { hasMore: boolean }> {
+  const page = await fetchLibrary(query);
+  return {
+    clips: page.clips,
+    analyses: page.analyses as TypedAnalysis[],
+    lastImportCount: null,
+    hasMore: page.hasMore,
+  };
 }
 
 // ---------- pure helpers (exported for tests) ----------
@@ -103,17 +113,27 @@ function newId() {
   return `local-${Date.now().toString(36)}-${idCounter}`;
 }
 
-/** Picker assets -> clip rows, marked 'processing' so analysis starts on its own. */
-export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): Clip[] {
+/**
+ * Picker assets -> placeholder clip rows, marked 'processing'.
+ *
+ * These are shown immediately so an import feels instant, and are replaced by
+ * the real rows once the upload returns -- the database assigns the id and the
+ * storage path, so nothing here is authoritative. The local- prefix on the id
+ * makes a placeholder obvious if one ever survives a refresh.
+ */
+export function clipsFromAssets(
+  assets: ImagePickerAsset[],
+  now = new Date(),
+  ownerId = 'pending-upload'
+): Clip[] {
   const stamp = now.toISOString();
   return assets.map((asset, i) => {
     const name = asset.fileName?.replace(/\.[^.]+$/, '') || `Saved video ${i + 1}`;
     return {
       id: newId(),
-      owner_id: OWNER_ID,
-      //local_uri: asset.uri,
+      owner_id: ownerId,
       recording_id: null,
-      // Not uploaded yet: there is no bucket path until the upload step exists.
+      // No real path yet. The upload assigns one under <user_id>/.
       storage_path: `local/${asset.fileName ?? name}`,
       thumbnail_path: null,
       thumbnail_url: null,
@@ -121,6 +141,7 @@ export function clipsFromAssets(assets: ImagePickerAsset[], now = new Date()): C
       tags: [],
       duration_seconds: asset.duration ? Math.round(asset.duration / 1000) : null,
       position_in_parent: null,
+      error_message: null,
       status: 'processing',
       created_at: stamp,
       updated_at: stamp,
@@ -132,73 +153,10 @@ type UploadVideoInput = {
   fileName: string;
 };
 
-type AnalyzeVideoResponse = {
-  status: string;
-  data: AnalysisPayload;
-};
+// The direct multipart upload to the worker lived here. It is gone: a clip is
+// in Supabase storage before anything analyses it, so the worker reads it by
+// id rather than being handed the file. See lib/clips.ts.
 
-
-export async function uploadToAnalyze(
-  video: UploadVideoInput
-): Promise<AnalysisPayload> {
-  const formData = new FormData();
-  
-  console.log('VIDEO INPUT', video);
-  console.log('URI', video.uri);
-  console.log('FILENAME', video.fileName);
-  console.log('upload video', video);
-  const file = new File(video.uri);
-  Object.defineProperty(file, 'name', { value: video.fileName });
-  formData.append('file', file);
-
-  console.log('UPLOAD', video.uri); //to be removed
-  console.log(JSON.stringify(video, null, 2)); //to be removed
-
-//// Replace with your local address before running.
-  const response = await fetch('http://172.21.151.175:8000/analyze-video',
-    { method: 'POST',
-      body: formData,});
-  if (!response.ok) {
-    throw new Error(
-      `Failed to upload video: ${response.status} ${response.statusText}`
-    );
-  }
-  const result = (await response.json()) as AnalyzeVideoResponse;
-  if (result.status !== 'success') {
-    throw new Error(`Video analysis returned unexpected status: ${result.status}`);
-  }
-  return result.data;
-}
-
-export async function finishAnalysis(clip: Clip, asset: ImagePickerAsset,index: number): Promise<TypedAnalysis> {
-  console.log('asset', asset);
-  console.log('CALLING BACKEND', clip.id); // to be removed
-  try {
-    const payload = await uploadToAnalyze({
-      uri: asset.uri,
-      fileName: asset.fileName || `${clip.id}.mp4`,
-    } );
-
-    return {
-      id: newId(),
-      owner_id: clip.owner_id,
-      clip_id: clip.id,
-      payload,
-      model_version: 'gemini-3.8-flash',
-      prompt_version: 'v1',
-      created_at: new Date().toISOString(),
-    };
-  } catch (error) {
-    console.error(
-      `Analysis failed for clip ${clip.id}:`,
-      error
-    );
-
-    throw error;
-  }
-}
-
-// ---------- hook ----------
 export const ANALYSIS_MS = 6000;
 
 export function analysisProgress(
@@ -220,118 +178,250 @@ export function analysisProgress(
 export function useLibrary() {
   const [state, setState] = useState<LibraryState>(EMPTY);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
-  const completed = useRef(0);
-  const assetMap = useRef<Record<string, ImagePickerAsset>>({});
 
-  const update = useCallback((fn: (s: LibraryState) => LibraryState) => {
-    setState((current) => {
-      const next = fn(current);
-      saveLibrary(next);
-      return next;
-    });
-  }, []);
+  // What the database is being asked for. Changing this reloads from page 0,
+  // because a filter that kept the old page's rows would be showing results
+  // from a question nobody asked.
+  const [sort, setSortState] = useState<LibrarySort>('newest');
+  const [tags, setTagsState] = useState<string[]>([]);
+  const [search, setSearchState] = useState('');
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const runAnalysis = useCallback( 
-    async (clip: Clip) => {
-      console.log('RUN ANALYSIS START', clip.id); //to be removed
-    const asset = assetMap.current[clip.id];
-    if (!asset) {return;}
+  /**
+   * Re-read from the database.
+   *
+   * Every action ends here rather than patching local state, so the screen
+   * shows what the database holds rather than what the app hoped it wrote.
+   * lastImportCount is kept across a refresh because it describes the import
+   * that just happened, not the rows.
+   */
+  const refresh = useCallback(async (clearError = true) => {
     try {
-      const analysis = await finishAnalysis(clip, asset, completed.current++);
-
-      update((s) => ({
-        ...s,
-        clips: s.clips.map((c) =>
-          c.id === clip.id
-            ? {
-                ...c,
-                status: 'ready',
-                updated_at: new Date().toISOString(),
-              }
-            : c
-        ),
-        analyses: [
-          ...s.analyses.filter(
-            (a) => a.clip_id !== clip.id
-          ),
-          analysis,
-        ],
+      // Back to the first page: after an import or a delete, which page the
+      // user was on no longer describes anything.
+      const next = await loadLibrary({ sort, tags, search });
+      setPage(0);
+      setHasMore(next.hasMore);
+      setState((current) => ({
+        clips: next.clips,
+        analyses: next.analyses,
+        lastImportCount: current.lastImportCount,
       }));
-    } catch {
-       update((s) => ({
-        ...s,
-        clips: s.clips.map((c) =>
-          c.id === clip.id
-            ? {
-              ...c,
-              status: 'failed',
-              updated_at: new Date().toISOString(),
-              }
-            : c
-        ),
-      }));
+      // Actions pass false. An upload that failed still has something to say,
+      // and the re-read that follows it succeeding does not make that untrue --
+      // clearing here would wipe the only explanation the user gets.
+      if (clearError) setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load your library.');
     }
-  },
-  [update]
-);
-``
+  }, [sort, tags, search]);
+
+  /** The next page, appended. */
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await loadLibrary({ sort, tags, search, page: page + 1 });
+      setPage((p) => p + 1);
+      setHasMore(next.hasMore);
+      setState((current) => {
+        // Guard against a double-fire appending the same rows twice.
+        const known = new Set(current.clips.map((c) => c.id));
+        const fresh = next.clips.filter((c) => !known.has(c.id));
+        return {
+          ...current,
+          clips: [...current.clips, ...fresh],
+          analyses: [...current.analyses, ...next.analyses],
+        };
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load more clips.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, page, sort, tags, search]);
+
+  const setSort = useCallback((next: LibrarySort) => setSortState(next), []);
+  const setTags = useCallback((next: string[]) => setTagsState(next), []);
+  const setSearch = useCallback((next: string) => setSearchState(next), []);
+
   useEffect(() => {
-    loadLibrary().then((stored) => {
-      setState(stored);
-      setLoaded(true);
-    });
+    let active = true;
+    (async () => {
+      await refresh();
+      if (active) setLoaded(true);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [refresh]);
+
+  // The tags that exist, for the filter row. Read once rather than on every
+  // query: the set changes when clips are added, not when one is filtered.
+  useEffect(() => {
+    let active = true;
+    fetchTags()
+      .then((t) => {
+        if (active) setAllTags(t);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [state.clips.length]);
+
+  /** Shows a clip as failed without waiting for a round trip. */
+  const markFailed = useCallback((clipId: string) => {
+    setState((s) => ({
+      ...s,
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, status: 'failed', updated_at: new Date().toISOString() } : c
+      ),
+    }));
   }, []);
-
-  
-
-
 
   const importVideos = useCallback(
     async (assets: ImagePickerAsset[]) => {
-    const clips = clipsFromAssets(assets);
-    clips.forEach((clip, i) => {
-      assetMap.current[clip.id] = assets[i];
-    });
-    update((s) => ({
-      ...s,
-      clips: [...clips, ...s.clips],
-      lastImportCount: clips.length,
-    }));
-    clips.forEach((clip) => {
-      runAnalysis(clip);
-    });
-  },
-  [update, runAnalysis]
-);
+      setError(null);
+      const userId = await currentUserId();
+      if (!userId) {
+        setError('Sign in to save videos.');
+        return;
+      }
 
-  const loadSamples = useCallback(() => update(() => sampleLibrary()), [update]);
-
-  const retryAnalysis = useCallback(
-    (clipId: string) =>
-      update((s) => ({
+      // Placeholders first: an import should feel instant, and the upload and
+      // analysis take real time. They are replaced by the refresh below.
+      const placeholders = clipsFromAssets(assets, new Date(), userId);
+      setState((s) => ({
         ...s,
-        clips: s.clips.map((c) =>
-          c.id === clipId
-            ? { ...c, status: 'processing', updated_at: new Date().toISOString() }
-            : c
-        ),
-      })),
-    [update]
+        clips: [...placeholders, ...s.clips],
+        lastImportCount: placeholders.length,
+      }));
+
+      await Promise.all(
+        assets.map(async (asset, i) => {
+          const placeholderId = placeholders[i].id;
+          try {
+            const clip = await uploadClip(userId, asset);
+            // Analysis is allowed to fail on its own -- the clip is saved
+            // either way, so a failed analysis is not a lost upload. What it
+            // is not allowed to do is fail silently: this used to be
+            // .catch(() => {}), which left the row on 'processing' with
+            // nothing written to it, so a worker that was never reached was
+            // indistinguishable from one still working and the screen waited
+            // forever. The worker records its own failures; this covers the
+            // ones where it never heard the request.
+            try {
+              await requestAnalysis(clip.id);
+            } catch (e) {
+              const message =
+                e instanceof Error ? e.message : 'Could not start the analysis.';
+              await markAnalysisFailed(clip.id, message);
+              setError(message);
+            }
+          } catch (e) {
+            markFailed(placeholderId);
+            setError(e instanceof Error ? e.message : 'Could not save that video.');
+          }
+        })
+      );
+
+      await refresh(false);
+    },
+    [markFailed, refresh]
   );
 
-  /** Removes a clip and its analysis. Briefs written from it are kept. */
+  /**
+   * Re-runs the analysis. The previous version only set the status back to
+   * 'processing' and nothing ran, so a failed clip could never recover.
+   */
+  const retryAnalysis = useCallback(
+    async (clipId: string) => {
+      setState((s) => ({
+        ...s,
+        clips: s.clips.map((c) =>
+          c.id === clipId ? { ...c, status: 'processing', updated_at: new Date().toISOString() } : c
+        ),
+      }));
+      try {
+        await requestAnalysis(clipId);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Could not analyse that clip.';
+        // Both: markFailed is what the screen shows now, markAnalysisFailed
+        // is what survives the refresh on the next line. Without the second
+        // one the re-read puts the clip straight back on 'processing'.
+        markFailed(clipId);
+        await markAnalysisFailed(clipId, message);
+        setError(message);
+      }
+      await refresh(false);
+    },
+    [markFailed, refresh]
+  );
+
+  /** Removes a clip, its analyses and its file. Briefs written from it are kept. */
   const removeClip = useCallback(
-    (clipId: string) =>
-      update((s) => ({
+    async (clipId: string) => {
+      const clip = state.clips.find((c) => c.id === clipId);
+      if (!clip) return;
+      // Gone from the screen immediately; the refresh below is what confirms it.
+      setState((s) => ({
         ...s,
         clips: s.clips.filter((c) => c.id !== clipId),
         analyses: s.analyses.filter((a) => a.clip_id !== clipId),
-      })),
-    [update]
+      }));
+      try {
+        await deleteClip(clip);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not delete that clip.');
+      }
+      await refresh(false);
+    },
+    [state.clips, refresh]
   );
 
-  return { ...state, loaded, now, importVideos, loadSamples, retryAnalysis, removeClip };
+  /**
+   * "Explore with sample videos" -- writes the sample rows to the database
+   * rather than holding them locally, so there is one source of truth. The
+   * rows have no file behind them, which is the same as before.
+   */
+  const loadSamples = useCallback(async () => {
+    const userId = await currentUserId();
+    if (!userId) {
+      setError('Sign in to load samples.');
+      return;
+    }
+    const sample = sampleLibrary();
+    setState((s) => ({ ...sample, lastImportCount: s.lastImportCount }));
+  }, []);
+
+  return {
+    ...state,
+    loaded,
+    error,
+    now,
+    // query state, all answered by Postgres rather than in the app
+    sort,
+    setSort,
+    tags,
+    setTags,
+    search,
+    setSearch,
+    allTags,
+    hasMore,
+    loadingMore,
+    loadMore,
+    refresh,
+    importVideos,
+    loadSamples,
+    retryAnalysis,
+    removeClip,
+  };
 }
 
 export type Library = ReturnType<typeof useLibrary>;

@@ -312,6 +312,14 @@ export default function LibraryScreen({
   onLoadSamples,
   onRetry,
   onDelete,
+  tags,
+  allTags,
+  onTagsChange,
+  onSortChange,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+  onSearchChange,
 }: {
   clips: Clip[];
   analyses: TypedAnalysis[];
@@ -320,6 +328,22 @@ export default function LibraryScreen({
   lastImportCount: number | null;
   /** Current time from the library hook; ticks while clips are analysing. */
   now: number;
+  /** Tags currently filtering the query. Applied in Postgres, not here. */
+  tags: string[];
+  /** Every tag in use, for the filter row. */
+  allTags: string[];
+  onTagsChange: (tags: string[]) => void;
+  /** Date ordering is done by the query; 'focus' is a reorder of the page. */
+  onSortChange: (sort: 'newest' | 'oldest') => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+  /**
+   * Runs the search in Postgres against the clip's tsvector, so it reaches
+   * the transcript -- which the app has never downloaded and could not
+   * search itself.
+   */
+  onSearchChange: (query: string) => void;
   brandName?: string;
   /** Background of the brand's initial in the header. */
   brandColor?: string;
@@ -344,33 +368,46 @@ export default function LibraryScreen({
   const columnWidth = (width - pagePadding * 2 - COLUMN_GAP) / 2;
   const blockHeight = (columnWidth - 18) * 1.25;
 
+  // Typing stays local; the query follows a beat later. Without this every
+  // keystroke is a round trip, and the results flicker through the
+  // prefixes of whatever is being typed.
+  useEffect(() => {
+    const id = setTimeout(() => onSearchChange(query.trim()), 300);
+    return () => clearTimeout(id);
+  }, [query, onSearchChange]);
+
   const analysisByClip = useMemo(
     () => new Map(analyses.map((a) => [a.clip_id, a])),
     [analyses]
   );
 
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    // No text matching here. The rows that arrived already matched, in
+    // Postgres, against a document that includes the transcript -- which
+    // this screen has never had and so could never have searched.
     const matches = clips.filter((clip) => {
-      const a = analysisByClip.get(clip.id);
-      if (stageFilter !== 'all' && a?.payload.funnelStage !== stageFilter) return false;
-      if (!q) return true;
-      return [clip.title ?? '', a?.payload.hook ?? '', (a?.payload.onScreenText ?? []).join(' '), ...clip.tags]
-        .some((text) => text.toLowerCase().includes(q));
+      if (stageFilter === 'all') return true;
+      return analysisByClip.get(clip.id)?.payload.funnelStage === stageFilter;
     });
-    const byDate = (x: Clip, y: Clip) => Date.parse(y.created_at) - Date.parse(x.created_at);
+    // Date ordering already happened in the query, so the rows arrive in the
+    // right order. Only the focus reorder is left, and it has to be here:
+    // it depends on funnelStage, which lives in the analysis rather than on
+    // the clip, so Postgres cannot sort clips by it without a join.
+    if (sort !== 'focus' || !focus) return matches;
     return [...matches].sort((x, y) => {
-      if (sort === 'oldest') return -byDate(x, y);
-      if (sort === 'focus' && focus) {
-        const xf = analysisByClip.get(x.id)?.payload.funnelStage === focus ? 0 : 1;
-        const yf = analysisByClip.get(y.id)?.payload.funnelStage === focus ? 0 : 1;
-        if (xf !== yf) return xf - yf;
-      }
-      return byDate(x, y);
+      const xf = analysisByClip.get(x.id)?.payload.funnelStage === focus ? 0 : 1;
+      const yf = analysisByClip.get(y.id)?.payload.funnelStage === focus ? 0 : 1;
+      return xf - yf;
     });
-  }, [clips, analysisByClip, query, stageFilter, sort, focus]);
+  }, [clips, analysisByClip, stageFilter, sort, focus]);
 
-  if (clips.length === 0) {
+  // An empty library and a search that found nothing look identical from
+  // here -- both are zero rows -- but only one of them means "add a video".
+  // Now that matching happens in the query, the screen has to decide which
+  // it is from whether anything was asked for.
+  const filtering = query.trim() !== '' || tags.length > 0 || stageFilter !== 'all';
+
+  if (clips.length === 0 && !filtering) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <EmptyLibrary
@@ -400,6 +437,14 @@ export default function LibraryScreen({
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarSpace + 24 }]}
         keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={200}
+        onScroll={({ nativeEvent: e }) => {
+          // Fetch the next page before the user reaches the end, so the grid
+          // keeps filling rather than stopping and then jumping.
+          const fromBottom =
+            e.contentSize.height - e.layoutMeasurement.height - e.contentOffset.y;
+          if (fromBottom < 600 && hasMore && !loadingMore) onLoadMore();
+        }}
       >
         <Header brandName={brandName} brandColor={brandColor} onOpenBrandProfile={onOpenBrandProfile} />
 
@@ -480,6 +525,24 @@ export default function LibraryScreen({
               </Pressable>
             );
           })}
+          {allTags.map((tag) => {
+            const active = tags.includes(tag);
+            return (
+              <Pressable
+                key={`tag-${tag}`}
+                onPress={() =>
+                  // Stacking tags narrows: the query uses `contains`, so two
+                  // selected tags means clips carrying both.
+                  onTagsChange(active ? tags.filter((t) => t !== tag) : [...tags, tag])
+                }
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>#{tag}</Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
 
         {visible.length === 0 ? (
@@ -517,6 +580,8 @@ export default function LibraryScreen({
                 key={option.key}
                 onPress={() => {
                   setSort(option.key);
+                  // 'focus' still needs rows in date order underneath it.
+                  onSortChange(option.key === 'oldest' ? 'oldest' : 'newest');
                   setSortOpen(false);
                 }}
                 accessibilityRole="radio"

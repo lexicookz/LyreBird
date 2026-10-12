@@ -48,7 +48,12 @@ export default function AuthScreen({
   mode: AuthMode;
   /** Shown on the mascot's tag when logging back in. */
   savedCount?: number;
-  onSubmit: (email: string) => void;
+  /**
+   * Resolves once the account exists, rejects with a message worth showing.
+   * Async because real auth can fail -- the stand-in it replaced could not,
+   * so there was nothing to report.
+   */
+  onSubmit: (email: string, password: string) => Promise<void>;
   onSwitchMode: () => void;
 }) {
   const { colors } = useTheme();
@@ -57,11 +62,13 @@ export default function AuthScreen({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const { width } = useWindowDimensions();
   const s = width / 402;
   const copy = COPY[mode];
 
-  function handleSubmit() {
+  async function handleSubmit() {
+    if (busy) return;
     if (!isValidEmail(email)) {
       setError('That email doesn’t look right.');
       return;
@@ -71,7 +78,16 @@ export default function AuthScreen({
       return;
     }
     setError(null);
-    onSubmit(email);
+    setBusy(true);
+    try {
+      await onSubmit(email, password);
+    } catch (e) {
+      // The server is the only thing that can tell us the password is wrong
+      // or the email is taken, so its message is the one worth showing.
+      setError(e instanceof Error ? e.message : 'Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -150,7 +166,12 @@ export default function AuthScreen({
             </View>
           )}
 
-          <PrimaryButton label={copy.button} onPress={handleSubmit} style={styles.buttonShadow} />
+          <PrimaryButton
+            label={busy ? 'One moment…' : copy.button}
+            onPress={handleSubmit}
+            disabled={busy}
+            style={styles.buttonShadow}
+          />
 
           <Text style={styles.switchRow}>
             {copy.switchPrompt}{' '}

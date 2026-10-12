@@ -116,13 +116,13 @@ describe('CalendarScreen', () => {
 
     const items: CalendarItem[] = [
       {
-        briefId: mockBriefs[0].id,
+        id: 'e1', briefId: mockBriefs[0].id,
         date: sameDay,
         stage: 'TOFU',
         status: 'planned',
       },
       {
-        briefId: mockBriefs[1].id,
+        id: 'e2', briefId: mockBriefs[1].id,
         date: sameDay,
         stage: 'MOFU',
         status: 'filmed',
@@ -154,13 +154,13 @@ describe('calendar data', () => {
 
     const items = [
       {
-        briefId: 'a',
+        id: 'e3', briefId: 'a',
         date: toISODate(addDays(today, 1)),
         stage: 'TOFU' as const,
         status: 'planned' as const,
       },
       {
-        briefId: 'b',
+        id: 'e4', briefId: 'b',
         date: toISODate(addDays(today, 2)),
         stage: 'TOFU' as const,
         status: 'planned' as const,

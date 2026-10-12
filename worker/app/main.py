@@ -8,7 +8,7 @@ Supabase under RLS.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import clips, health
+from app.routers import briefs, clips, health, recordings
 
 app = FastAPI(title="LYREBIRD Worker", version="0.1.0")
 
@@ -24,3 +24,5 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(clips.router)
+app.include_router(briefs.router)
+app.include_router(recordings.router)

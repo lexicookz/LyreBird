@@ -18,7 +18,7 @@ import {
   brandColorOf,
   saveBrandSetup,
 } from './data/brandSetup';
-import { Account, loadAccount, signIn, signOut } from './data/account';
+import { Account, loadAccount, signIn, signOut, signUp } from './data/account';
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
 import AddVideoMenu from './components/AddVideoMenu';
@@ -99,8 +99,14 @@ function AppContent() {
 
   // ---------- actions ----------
 
-  async function handleAuth(email: string) {
-    const acct = await signIn(email);
+  /**
+   * Signing up and logging in are different calls now that accounts are real,
+   * so which one runs follows the screen the user is on. Errors are not caught
+   * here: AuthScreen awaits this and shows the message, since it is the thing
+   * with somewhere to put it.
+   */
+  async function handleAuth(email: string, password: string) {
+    const acct = stage === 'signup' ? await signUp(email, password) : await signIn(email, password);
     setAccount(acct);
     setStage(onboarded ? 'done' : 'brand');
   }
@@ -119,7 +125,7 @@ function AppContent() {
     closePushed();
   }
 
-  /** Signs out of the (stand-in) account. Brand, videos and briefs stay on the phone. */
+  /** Signs out. Brand, videos and briefs stay on the phone. */
   function handleSignOut() {
     setPushed(null);
     setActiveTab('library');
@@ -308,6 +314,14 @@ function AppContent() {
             briefClipIds={briefClipIds}
             lastImportCount={library.lastImportCount}
             now={library.now}
+            tags={library.tags}
+            allTags={library.allTags}
+            onTagsChange={library.setTags}
+            onSortChange={library.setSort}
+            hasMore={library.hasMore}
+            loadingMore={library.loadingMore}
+            onLoadMore={library.loadMore}
+            onSearchChange={library.setSearch}
             brandName={brandSetup?.name}
             brandColor={brandColor}
             focus={brandSetup?.focus}

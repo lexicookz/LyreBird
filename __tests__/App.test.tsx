@@ -10,6 +10,46 @@ import { mockBriefs } from '../data/mockVideos';
 import { BRAND_COLORS, brandColorOf } from '../data/brandSetup';
 import { darkColors, lightColors } from '../theme';
 
+
+// The analysis path posts the video to the pipeline API. In a test runner
+// there is no server at that address, so every imported clip failed and the
+// "finishes analysing" expectations never had a chance. Mock the reply with a
+// valid analysis so these tests exercise the flow rather than the network.
+function mockAnalyzeVideo(delayMs = 60_000) {
+  const reply = {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      status: 'success',
+      data: {
+        hook: 'Opening hook',
+        transcript: null,
+        onScreenText: [],
+        shotBeats: [],
+        pacing: null,
+        audioStyle: { backgroundMusic: null, voiceover: null },
+        cta: null,
+        whyItWorks: [],
+        format: 'talking_head',
+        funnelStage: 'TOFU',
+        description: 'A test clip.',
+      },
+      model_version: 'gemini-3.8-flash',
+      prompt_version: 'v2',
+    }),
+  } as Response;
+
+  // Resolves on a timer rather than immediately, so a clip is observably
+  // 'processing' before it is 'ready'. A suite on fake timers advances past
+  // delayMs to finish the analysis; one on real timers leaves it pending and
+  // sees the analysing state, which is what it is asserting.
+  return jest
+    .spyOn(global, 'fetch')
+    .mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(reply), delayMs))
+    );
+}
+
 describe('palettes', () => {
   test('light and dark have exactly the same colour names', () => {
     expect(Object.keys(darkColors).sort()).toEqual(Object.keys(lightColors).sort());
@@ -26,6 +66,156 @@ describe('brandColorOf', () => {
     expect(BRAND_COLORS).toContain(brandColorOf({ name: 'Nima Studio' }));
     expect(brandColorOf({ name: 'Nima Studio', color: 'peach' })).toBe('peach');
   });
+});
+
+// Real Supabase auth needs a server, which a test runner has no business
+// reaching. These tests are about App's wiring -- sign up leads to brand
+// setup, sign out returns to log in -- so the account module is replaced by
+// an AsyncStorage-backed stand-in with the same surface. Whether
+// signInWithPassword is called correctly is a different question, and not
+// one this suite can answer.
+jest.mock('../data/account', () => {
+  const KEY = 'lyrebird.account';
+  // Resolved per call, not at factory time: the AsyncStorage mock from
+  // jest.setup is not in place yet while this factory runs.
+  const store = () => {
+    const mod = require('@react-native-async-storage/async-storage');
+    return mod.default ?? mod;
+  };
+  return {
+    MIN_PASSWORD_LENGTH: 6,
+    AuthError: class AuthError extends Error {},
+    isValidEmail: (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()),
+    loadAccount: async () => {
+      const raw = await store().getItem(KEY);
+      return raw ? JSON.parse(raw) : null;
+    },
+    signIn: async (email: string) => {
+      const account = { email: email.trim().toLowerCase() };
+      await store().setItem(KEY, JSON.stringify(account));
+      return account;
+    },
+    signUp: async (email: string) => {
+      const account = { email: email.trim().toLowerCase() };
+      await store().setItem(KEY, JSON.stringify(account));
+      return account;
+    },
+    signOut: async () => {
+      await store().removeItem(KEY);
+    },
+    currentUserId: async () => {
+      const raw = await store().getItem(KEY);
+      return raw ? 'user-1' : null;
+    },
+  };
+});
+
+// Clips live in Supabase now. These tests are about App's navigation and
+// screens, so the data layer answers from memory -- reaching a database would
+// make them a different kind of test, and a slower one.
+// The calendar is in Supabase now. These tests are about the screens, so it
+// answers from memory -- the rows behave like the table, including keeping
+// one entry per brief the way scheduleBrief does.
+jest.mock('../lib/calendar', () => {
+  const rows: any[] = [];
+  let n = 0;
+  return {
+    __rows: rows,
+    fetchCalendar: jest.fn(async () => [...rows]),
+    scheduleBrief: jest.fn(async (ownerId: string, briefId: string, date: string, status: string) => {
+      const i = rows.findIndex((r) => r.brief_id === briefId);
+      if (i >= 0) rows.splice(i, 1);
+      n += 1;
+      const row = {
+        id: `cal-${n}`, owner_id: ownerId, brief_id: briefId,
+        scheduled_for: date, status, platform: null, notes: null,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      };
+      rows.push(row);
+      return row;
+    }),
+    moveEntry: jest.fn(async (id: string, date: string) => {
+      const row = rows.find((r) => r.id === id);
+      if (row) row.scheduled_for = date;
+      return row;
+    }),
+    setEntryStatus: jest.fn(async (id: string, status: string) => {
+      const row = rows.find((r) => r.id === id);
+      if (row) row.status = status;
+      return row;
+    }),
+    unscheduleBrief: jest.fn(async (briefId: string) => {
+      const i = rows.findIndex((r) => r.brief_id === briefId);
+      if (i >= 0) rows.splice(i, 1);
+    }),
+  };
+});
+
+jest.mock('../lib/clips', () => {
+  const rows: { clips: any[]; analyses: any[] } = { clips: [], analyses: [] };
+  let n = 0;
+  return {
+    CLIPS_BUCKET: 'clips',
+    __rows: rows,
+    LIBRARY_PAGE_SIZE: 24,
+    // Filtering, sorting and paging happen in Postgres now, so the mock
+    // answers the same shape the query does rather than a bare list.
+    fetchLibrary: jest.fn(async (q: any = {}) => {
+      let clips = [...rows.clips];
+      if (q.tags?.length) {
+        clips = clips.filter((c: any) => q.tags.every((t: string) => (c.tags ?? []).includes(t)));
+      }
+      clips.sort((a: any, b: any) =>
+        q.sort === 'oldest'
+          ? Date.parse(a.created_at) - Date.parse(b.created_at)
+          : Date.parse(b.created_at) - Date.parse(a.created_at)
+      );
+      const size = q.pageSize ?? 24;
+      const from = (q.page ?? 0) * size;
+      const slice = clips.slice(from, from + size);
+      const ids = new Set(slice.map((c: any) => c.id));
+      return {
+        clips: slice,
+        analyses: rows.analyses.filter((a: any) => ids.has(a.clip_id)),
+        hasMore: from + slice.length < clips.length,
+        total: clips.length,
+      };
+    }),
+    fetchTags: jest.fn(async () => {
+      const seen = new Set<string>();
+      for (const c of rows.clips) for (const t of c.tags ?? []) seen.add(t);
+      return [...seen].sort();
+    }),
+    uploadClip: jest.fn(async (ownerId: string, asset: any) => {
+      n += 1;
+      const stamp = new Date().toISOString();
+      const clip = {
+        id: `db-${n}`,
+        owner_id: ownerId,
+        recording_id: null,
+        storage_path: `${ownerId}/${asset.fileName ?? `clip-${n}.mp4`}`,
+        thumbnail_path: null,
+        thumbnail_url: null,
+        title: (asset.fileName ?? `Saved video ${n}`).replace(/\.[^.]+$/, ''),
+        tags: [],
+        duration_seconds: asset.duration ? Math.round(asset.duration / 1000) : null,
+        position_in_parent: null,
+        status: 'processing',
+        error_message: null,
+        created_at: stamp,
+        updated_at: stamp,
+      };
+      rows.clips = [clip, ...rows.clips];
+      return clip;
+    }),
+    requestAnalysis: jest.fn(async (clipId: string) => {
+      rows.clips = rows.clips.map((c) => (c.id === clipId ? { ...c, status: 'processing' } : c));
+    }),
+    deleteClip: jest.fn(async (clip: any) => {
+      rows.clips = rows.clips.filter((c) => c.id !== clip.id);
+      rows.analyses = rows.analyses.filter((a) => a.clip_id !== clip.id);
+    }),
+  };
 });
 
 jest.mock('expo-image-picker', () => ({
@@ -73,23 +263,52 @@ async function signedIn() {
   ]);
 }
 
-/** One analysed sample clip in the library, with no brief yet. */
+/**
+ * One analysed sample clip in the library, with no brief yet.
+ *
+ * Seeded into the mocked data layer rather than AsyncStorage: the library
+ * reads from the database now, so a row in local storage would never be seen.
+ */
 async function withOneAnalysedClip() {
   const sample = sampleLibrary();
   const id = 'cccccccc-0000-4000-8000-000000000001';
-  await AsyncStorage.setItem(
-    'lyrebird.library',
-    JSON.stringify({
-      clips: sample.clips.filter((c) => c.id === id),
-      analyses: sample.analyses.filter((a) => a.clip_id === id),
-      lastImportCount: null,
+  const clipsApi = require('../lib/clips');
+  clipsApi.__rows.clips = sample.clips.filter((c) => c.id === id);
+  clipsApi.__rows.analyses = sample.analyses.filter((a) => a.clip_id === id);
+}
+
+/**
+ * Sample entries in the calendar table, the way the database would hold
+ * them. Seeded there rather than in AsyncStorage: the calendar reads rows
+ * now, so a local copy would never be seen.
+ */
+function withSampleCalendar() {
+  const rows = require('../lib/calendar').__rows;
+  rows.length = 0;
+  sampleCalendar().forEach((item, i) =>
+    rows.push({
+      id: `cal-seed-${i + 1}`,
+      owner_id: 'user-1',
+      brief_id: item.briefId,
+      scheduled_for: item.date,
+      status: item.status,
+      platform: null,
+      notes: null,
+      created_at: '2026-09-01T00:00:00Z',
+      updated_at: '2026-09-01T00:00:00Z',
     })
   );
 }
 
 describe('App', () => {
   beforeEach(async () => {
+    mockAnalyzeVideo();
     await AsyncStorage.clear();
+    // The mocked data layer holds rows between tests; clear it like storage.
+    const clipsApi = require('../lib/clips');
+    clipsApi.__rows.clips = [];
+    clipsApi.__rows.analyses = [];
+    require('../lib/calendar').__rows.length = 0;
   });
 
   // ---------- first run and accounts ----------
@@ -235,8 +454,9 @@ describe('App', () => {
     await fireEvent.press(await findByText('Delete video'));
 
     expect(await findByText('Nothing saved yet')).toBeTruthy();
-    const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.library')) ?? '{}');
-    expect(saved.clips).toEqual([]);
+    // Deleted from the database, not from local storage -- that is where
+    // clips live now, and the row going is what makes the deletion stick.
+    expect(require('../lib/clips').__rows.clips).toEqual([]);
     expect(getByText('Add your first videos')).toBeTruthy();
   });
 
@@ -272,12 +492,12 @@ describe('App', () => {
     await fireEvent.press(await findByLabelText('Calendar'));
 
     expect(await findByText('Nothing to film\nthis week')).toBeTruthy();
-    expect(await AsyncStorage.getItem('lyrebird.calendar')).toBeNull();
+    expect(require('../lib/calendar').__rows).toHaveLength(0);
   });
 
   test('an entry on the calendar can be rescheduled and its status changed', async () => {
     await signedIn();
-    await AsyncStorage.setItem('lyrebird.calendar', JSON.stringify(sampleCalendar()));
+    withSampleCalendar();
     await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
     const { findByLabelText, findByText, getByText, getAllByText, queryByText } = await render(<App />);
 
@@ -291,7 +511,7 @@ describe('App', () => {
 
     expect(queryByText('Schedule brief')).toBeNull();
     expect(getByText('Posted')).toBeTruthy();
-    const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.calendar')) ?? '[]');
+    const saved = require('../lib/calendar').__rows.map((r: any) => ({ briefId: r.brief_id, date: r.scheduled_for, status: r.status }));
     expect(saved).toContainEqual(
       expect.objectContaining({ briefId: 'bbbbbbbb-0000-4000-8000-000000000001', status: 'posted' })
     );
@@ -299,7 +519,7 @@ describe('App', () => {
 
   test('"See brief" on a calendar entry opens the brief', async () => {
     await signedIn();
-    await AsyncStorage.setItem('lyrebird.calendar', JSON.stringify(sampleCalendar()));
+    withSampleCalendar();
     await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
     const { findByLabelText, findByText, getByText, queryByText } = await render(<App />);
 

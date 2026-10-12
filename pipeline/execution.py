@@ -14,6 +14,11 @@ from schema import VideoAnalysis
 load_dotenv()
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompt")
 
+# One place for the model name. It used to live only in roulette's default
+# argument, so api.py had nothing to report back and the app hardcoded its own
+# guess -- which is how an analysis gets stored against the wrong model.
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
 def load_prompt(prompt_name: str) -> str:
     prompt_path = os.path.join(PROMPTS_DIR, f"{prompt_name}.text")
     if not os.path.exists(prompt_path):
@@ -48,7 +53,7 @@ def get_client():
     print(f"Using key #{API_KEYS.index(api_key) + 1}")
     return genai.Client(api_key=api_key)
 
-def roulette(client, contents, config, model="gemini-3.8-flash", max_attempts=1):
+def roulette(client, contents, config, model=MODEL, max_attempts=1):
     last_error = None
 
     for attempt in range(max_attempts):

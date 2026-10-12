@@ -6,7 +6,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CACHE_FILE = os.path.join(os.path.dirname(__file__), "video_cache.json")
+# Writable location for the local cache. Defaults to beside this module,
+# which is fine for a developer running the pipeline. The worker overrides it,
+# because in the container that path is inside the image: writable, but wiped
+# on every deploy, and not somewhere application data belongs.
+CACHE_FILE = os.getenv(
+    "LYREBIRD_CACHE_FILE",
+    os.path.join(os.path.dirname(__file__), "video_cache.json"),
+)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 

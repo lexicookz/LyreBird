@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { act, render, fireEvent } from '@testing-library/react-native';
 import LibraryScreen from '../screens/LibraryScreen';
 import { sampleLibrary } from '../data/library';
 import { mockBriefs } from '../data/mockVideos';
@@ -21,6 +21,14 @@ async function renderLibrary(overrides: Partial<React.ComponentProps<typeof Libr
     onLoadSamples: jest.fn(),
     onRetry: jest.fn(),
     onDelete: jest.fn(),
+    tags: [],
+    allTags: [],
+    onTagsChange: jest.fn(),
+    onSortChange: jest.fn(),
+    hasMore: false,
+    loadingMore: false,
+    onLoadMore: jest.fn(),
+    onSearchChange: jest.fn(),
     ...overrides,
   };
   const screen = await render(<LibraryScreen {...props} />);
@@ -73,25 +81,47 @@ describe('LibraryScreen', () => {
     expect(props.onRetry).toHaveBeenCalledWith('cccccccc-0000-4000-8000-000000000004');
   });
 
-  test('search matches hooks', async () => {
-    const { getByPlaceholderText, getByText, queryByText } = await renderLibrary();
+  test('typing asks the database rather than filtering what is loaded', async () => {
+    jest.useFakeTimers();
+    const onSearchChange = jest.fn();
+    const { getByPlaceholderText } = await renderLibrary({ onSearchChange });
 
     await fireEvent.changeText(getByPlaceholderText('Search hooks, captions, tags'), 'snooze');
 
-    expect(getByText("“I used to hit snooze 5 times. Here's what fixed it.”")).toBeTruthy();
-    expect(queryByText('“Your welcome email has a 3-second window. Most brands waste it.”')).toBeNull();
+    // Debounced: a query per keystroke would flicker through the prefixes
+    // of whatever is being typed.
+    expect(onSearchChange).not.toHaveBeenCalledWith('snooze');
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    expect(onSearchChange).toHaveBeenCalledWith('snooze');
+    jest.useRealTimers();
+  });
+
+  test('the rows it is given are the rows it shows', async () => {
+    // Matching happens in Postgres against a document that includes the
+    // transcript, which this screen never receives -- so it renders the
+    // result rather than second-guessing it.
+    const sample = sampleLibrary(new Date(NOW));
+    const one = sample.clips.slice(0, 1);
+    const { getByText } = await renderLibrary({
+      clips: one,
+      analyses: sample.analyses.filter((a) => a.clip_id === one[0].id),
+    });
+
     expect(getByText('1 result')).toBeTruthy();
   });
 
-  test('shows a message when nothing matches', async () => {
-    const { getByPlaceholderText, getByText } = await renderLibrary();
+  test('an empty result while filtering is not the empty library', async () => {
+    // Both are zero rows. Only one of them means "add a video", and now
+    // that matching happens in the query the screen has to tell them apart
+    // from whether anything was asked for.
+    const empty = await renderLibrary({ clips: [], analyses: [] });
+    expect(empty.queryByText('No videos match your search.')).toBeNull();
+    expect(empty.getByText('Add your first videos')).toBeTruthy();
 
-    await fireEvent.changeText(
-      getByPlaceholderText('Search hooks, captions, tags'),
-      'this query matches nothing at all'
-    );
-
-    expect(getByText('No videos match your search.')).toBeTruthy();
+    const filtered = await renderLibrary({ clips: [], analyses: [], tags: ['morning'] });
+    expect(filtered.getByText('No videos match your search.')).toBeTruthy();
   });
 
   test('funnel chips filter by stage', async () => {

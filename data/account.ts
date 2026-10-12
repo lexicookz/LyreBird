@@ -1,16 +1,20 @@
 // data/account.ts
-// Who is signed in -- a LOCAL STAND-IN until real accounts exist.
+// Who is signed in.
 //
-// The Log in and Sign up screens are built, but nothing is checked: any email
-// and password (6+ characters) gets in, and only the email is remembered on the
-// device. Real accounts are being built separately with Supabase auth (branch
-// be-09); when that lands, replace these three functions with supabase.auth
-// calls (signUp / signInWithPassword / signOut) and read the session instead.
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// Real Supabase accounts, replacing the local stand-in that accepted any
+// email and password. The client persists the session in AsyncStorage and
+// refreshes it, so a signed-in user stays signed in across restarts without
+// this module storing anything itself.
+//
+// This matters beyond logging in. Every RLS policy is
+// `to authenticated using (auth.uid() = owner_id)`, and the storage policies
+// compare (storage.foldername(name))[1] to auth.uid(). Without a real session
+// there is no uid, so a signed-out app cannot read its own rows or write a
+// file to a path it owns -- it is not a gate in front of working features,
+// it is what makes them work.
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 export type Account = { email: string };
-
-const ACCOUNT_KEY = 'lyrebird.account';
 
 export const MIN_PASSWORD_LENGTH = 6;
 
@@ -18,22 +22,86 @@ export function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
-export async function loadAccount(): Promise<Account | null> {
-  try {
-    const raw = await AsyncStorage.getItem(ACCOUNT_KEY);
-    return raw ? (JSON.parse(raw) as Account) : null;
-  } catch {
-    return null;
-  }
+/** Carries a message worth showing a user. */
+export class AuthError extends Error {}
+
+const NOT_CONFIGURED =
+  'This build has no Supabase configuration. Copy .env.example to .env and fill in ' +
+  'EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.';
+
+function requireConfig() {
+  if (!isSupabaseConfigured) throw new AuthError(NOT_CONFIGURED);
 }
 
-/** Stand-in for both sign up and log in. */
-export async function signIn(email: string): Promise<Account> {
-  const account = { email: email.trim().toLowerCase() };
-  await AsyncStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
-  return account;
+/**
+ * Supabase writes its messages for developers. These are the ones a user can
+ * act on; anything else passes through rather than hiding behind something
+ * vague, because a wrong guess is worse than an unfamiliar message.
+ */
+function readable(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('invalid login credentials')) return 'That email and password don’t match.';
+  if (m.includes('already registered')) return 'There’s already an account with that email.';
+  if (m.includes('email not confirmed')) return 'Check your email to confirm the account first.';
+  if (m.includes('network') || m.includes('failed to fetch')) {
+    return 'Could not reach the server. Check your connection.';
+  }
+  return message;
+}
+
+function accountFrom(email: string | undefined): Account {
+  return { email: (email ?? '').toLowerCase() };
+}
+
+/** The signed-in account, or null. Reads the persisted session. */
+export async function loadAccount(): Promise<Account | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data } = await supabase.auth.getSession();
+  const email = data.session?.user?.email;
+  return email ? accountFrom(email) : null;
+}
+
+/**
+ * The signed-in user's id, or null.
+ *
+ * Needed wherever a row is written: every table carries owner_id, and the
+ * storage path is `<user_id>/<filename>` because the policies compare
+ * (storage.foldername(name))[1] to auth.uid().
+ */
+export async function currentUserId(): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id ?? null;
+}
+
+export async function signIn(email: string, password: string): Promise<Account> {
+  requireConfig();
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error) throw new AuthError(readable(error.message));
+  return accountFrom(data.user?.email);
+}
+
+export async function signUp(email: string, password: string): Promise<Account> {
+  requireConfig();
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error) throw new AuthError(readable(error.message));
+
+  // With email confirmation enabled, signUp succeeds but returns no session.
+  // The app would look signed in while every RLS query came back empty, so
+  // say so rather than letting it through.
+  if (!data.session) {
+    throw new AuthError('Check your email to confirm the account, then log in.');
+  }
+  return accountFrom(data.user?.email);
 }
 
 export async function signOut() {
-  await AsyncStorage.removeItem(ACCOUNT_KEY);
+  if (!isSupabaseConfigured) return;
+  await supabase.auth.signOut();
 }

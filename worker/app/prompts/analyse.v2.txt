@@ -1,0 +1,20 @@
+Analyse this short-form video and fill in every field.
+
+Transcribe speech verbatim. If nobody speaks, say so rather than describing the
+audio — the transcript field is for words.
+
+Report the on-screen text as it appears, in order, including captions burned
+into the frame.
+
+Break the video into its structural beats — the moves it makes, not a shot list
+of camera angles. Aim for three to seven; a beat is a change in what the video
+is doing, not every cut.
+
+Describe pacing in terms a creator would use: cut rhythm, energy, whether it
+front-loads or builds.
+
+Classify the funnel stage and format from the options given, choosing the
+closest fit rather than leaving a field empty.
+
+Describe only what is in the video. Do not infer the brand, the product or the
+creator's intent from outside it, and do not speculate about performance.
