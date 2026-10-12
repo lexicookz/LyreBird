@@ -7,7 +7,7 @@ keeps the model call testable on its own.
 
 from __future__ import annotations
 
-import math
+import random
 import re
 import time
 from functools import lru_cache
@@ -47,14 +47,35 @@ _POLL_TIMEOUT_SECONDS = 10 * 60
 # analysis is slow but not unbounded, so this is generous and finite.
 _REQUEST_TIMEOUT_MS = 5 * 60 * 1000
 
-# One retry, as the ticket specifies -- enough to ride out a dropped
-# connection, few enough that a genuinely unreachable API fails quickly
-# instead of multiplying the wait.
-_RETRY_BACKOFF_SECONDS = 2.0
+# Retry schedule.
+#
+# This was one retry two seconds later, which BE-14 specified for a dropped
+# connection -- the right shape for that failure, and the wrong one for the
+# failure we actually get. Gemini returns 503 "this model is currently
+# experiencing high demand" intermittently, and two seconds is nowhere near
+# long enough to ride that out: the deployed worker failed three analyses out
+# of three while the same call from a laptop succeeded three times out of
+# four. Capacity needs waiting, not immediacy.
+#
+# The delay doubles from _RETRY_BASE_SECONDS, and _RETRY_BUDGET_SECONDS caps
+# the whole call -- attempts included, not just the sleeping. That is what
+# keeps a dead API from multiplying the wait, which was the original concern:
+# slow failures use the budget up in two or three attempts, fast ones get all
+# of them.
+_RETRY_BASE_SECONDS = 2.0
+_RETRY_MAX_SLEEP_SECONDS = 20.0
+_RETRY_BUDGET_SECONDS = 60.0
 
 # Substrings that mean "this might work if we try again". Matched against the
 # exception type and message because the SDK surfaces transport failures from
 # several underlying libraries rather than one exception class.
+#
+# 429 and RESOURCE_EXHAUSTED are in here deliberately: a per-minute rate limit
+# clears inside the budget, which is the common case on a shared key with the
+# whole group testing at once. A daily quota does not, and retrying it would
+# be fifteen wasted seconds -- but the API says which it is, so _retry_after()
+# reads the delay it asks for and _call_model refuses to retry past the
+# budget. See GeminiQuotaExceeded.
 _TRANSIENT_MARKERS = (
     "timeout",
     "timed out",
@@ -64,36 +85,12 @@ _TRANSIENT_MARKERS = (
     "unavailable",
     "503",
     "504",
+    "429",
+    "resource_exhausted",
+    "rate limit",
     "temporarily",
     "reset by peer",
 )
-
-# Substrings that mean "the key is out of quota". Checked *before*
-# _TRANSIENT_MARKERS, because the two overlap -- a quota rejection often says
-# "try again later", which reads as transient -- and the handling is opposite:
-# a transport blip is worth retrying two seconds later, a spent quota is not.
-_QUOTA_MARKERS = (
-    "resource_exhausted",
-    "quota",
-    "rate limit",
-    "too many requests",
-)
-
-# Google returns a RetryInfo detail alongside a 429, as a protobuf duration
-# string: "retryDelay": "53s". Worth parsing rather than always guessing,
-# because it is the only part of the response that knows when the quota
-# window actually rolls over. The character class spans the punctuation
-# between the key and the value, which varies with how the SDK stringifies
-# the error.
-_RETRY_DELAY = re.compile(
-    r"retry[_-]?delay[^0-9]{0,8}(\d+(?:\.\d+)?)s",
-    re.IGNORECASE,
-)
-
-# Used when the rejection carries no RetryInfo. A minute is a guess, but a
-# wrong guess the app can act on beats no header at all, which leaves it
-# retrying in a tight loop against a wall.
-_DEFAULT_RETRY_AFTER_SECONDS = 60
 
 
 class GeminiError(RuntimeError):
@@ -102,22 +99,23 @@ class GeminiError(RuntimeError):
 
 
 class GeminiTimeout(GeminiError):
-    """Timed out or could not reach the API, after the retry. Separate from
+    """Timed out or could not reach the API, after every retry. Separate from
     GeminiError so the caller can say so in the row rather than reporting a
     network problem as a bad analysis."""
 
 
 class GeminiQuotaExceeded(GeminiError):
-    """The API key is out of quota.
+    """The key's quota is gone and waiting will not help within this request.
 
-    A sibling of GeminiTimeout rather than a plain GeminiError because it is
-    the third distinct outcome: the request was well-formed and the API was
-    reachable, so repeating it unchanged will work -- just not yet. Carries
-    `retry_after_seconds` so the router can say when, which is the difference
-    between an app that backs off and one that hammers a spent quota.
+    Distinct because the response to it is different in kind. A 503 or a
+    dropped connection means try again; this means the project has spent its
+    allowance, and on the free tier that allowance is 20 generate_content
+    calls per day per model, shared by everyone using the key. Retrying is
+    pure waste, and telling the user to 'try again in a moment' is wrong by
+    about sixteen hours.
     """
 
-    def __init__(self, message: str, retry_after_seconds: int) -> None:
+    def __init__(self, message: str, retry_after_seconds: float | None = None) -> None:
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
 
@@ -127,29 +125,69 @@ def _looks_transient(exc: BaseException) -> bool:
     return any(marker in text for marker in _TRANSIENT_MARKERS)
 
 
-def _looks_like_quota(exc: BaseException) -> bool:
-    """Whether a raw SDK exception is a quota rejection.
+# Gemini answers a 429 with how long to wait, in two shapes in the same
+# payload: a RetryInfo field, and a sentence. Either is worth more than a
+# guess -- "retry in 16 hours" and "retry in 20 seconds" arrive as the same
+# exception type and want opposite responses.
+_RETRY_INFO = re.compile(r"'retryDelay':\s*'(\d+(?:\.\d+)?)s'")
+_RETRY_SENTENCE = re.compile(
+    r"retry in (?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?", re.IGNORECASE
+)
 
-    The status code is checked first and the message only as a fallback: the
-    SDK sets `code` on its own ClientError, but the same rejection can arrive
-    wrapped by an underlying transport library with nothing but a string.
+
+def _retry_after(exc: BaseException) -> float | None:
+    """How long the API asked us to wait, in seconds, if it said."""
+    text = str(exc)
+
+    found = _RETRY_INFO.search(text)
+    if found:
+        return float(found.group(1))
+
+    found = _RETRY_SENTENCE.search(text)
+    if found and any(found.groups()):
+        hours, minutes, seconds = found.groups()
+        return (
+            float(hours or 0) * 3600 + float(minutes or 0) * 60 + float(seconds or 0)
+        )
+    return None
+
+
+def _humanise(seconds: float) -> str:
+    if seconds >= 3600:
+        return f"about {seconds / 3600:.0f} hours"
+    if seconds >= 60:
+        return f"about {seconds / 60:.0f} minutes"
+    return f"{seconds:.0f} seconds"
+
+
+def _quota_exceeded(exc: BaseException, retry_after: float) -> GeminiQuotaExceeded:
+    """The message a user will read off the clip row, not a stack trace.
+
+    error_message goes straight to the screen, so it has to say what is
+    actually wrong. "Quota exceeded for metric
+    generativelanguage.googleapis.com/generate_content_free_tier_requests"
+    does not tell anyone that the team shares one key and has used the day's
+    twenty analyses.
     """
-    for attribute in ("code", "status_code"):
-        if getattr(exc, attribute, None) == 429:
-            return True
-    text = f"{type(exc).__name__} {exc}".lower()
-    return any(marker in text for marker in _QUOTA_MARKERS)
+    return GeminiQuotaExceeded(
+        f"The Gemini key has used its quota for now -- the API asks us to wait "
+        f"{_humanise(retry_after)}. On the free tier that allowance is shared "
+        f"by everyone using the key, so this is not something retrying will "
+        f"fix. Original error: {type(exc).__name__}: {exc}",
+        retry_after_seconds=retry_after,
+    )
 
 
-def _quota_exceeded(exc: BaseException, what: str) -> GeminiQuotaExceeded:
-    match = _RETRY_DELAY.search(str(exc))
-    if match:
-        # Round up: a Retry-After one second short sends the caller straight
-        # back into the same rejection.
-        retry_after = max(1, math.ceil(float(match.group(1))))
-    else:
-        retry_after = _DEFAULT_RETRY_AFTER_SECONDS
-    return GeminiQuotaExceeded(f"{what}: {exc}", retry_after_seconds=retry_after)
+def _backoff(attempt: int) -> float:
+    """Seconds to wait before attempt + 1, doubling and jittered.
+
+    The jitter is not decoration. Five people testing at once hit the same
+    overloaded model, back off by the same amount, and come back together --
+    which is the load pattern that caused the 503 in the first place.
+    Spreading the retries is what stops a queue forming.
+    """
+    base = min(_RETRY_BASE_SECONDS * (2 ** (attempt - 1)), _RETRY_MAX_SLEEP_SECONDS)
+    return base * random.uniform(0.5, 1.5)
 
 
 @lru_cache(maxsize=1)
@@ -171,8 +209,6 @@ def upload_and_wait(path: Path):
     try:
         uploaded = client.files.upload(file=str(path))
     except Exception as exc:
-        if _looks_like_quota(exc):
-            raise _quota_exceeded(exc, "Gemini quota exhausted on upload") from exc
         if _looks_transient(exc):
             raise GeminiTimeout(f"Could not reach Gemini to upload the video: {exc}") from exc
         raise GeminiError(f"Upload rejected: {type(exc).__name__}: {exc}") from exc
@@ -203,7 +239,7 @@ def delete_file(name: str) -> None:
 
 
 def _call_model(contents: list, schema: type[BaseModel]) -> BaseModel:
-    """One model call with the retry and validation rules BE-14 set out.
+    """One model call, retried on transient failures, with BE-14's validation.
 
     Shared by every generation the worker does, so a brief fails the same way
     an analysis does rather than growing its own error handling.
@@ -221,32 +257,50 @@ def _call_model(contents: list, schema: type[BaseModel]) -> BaseModel:
             ),
         )
 
-    try:
-        response = _once()
-    except Exception as first:
-        if _looks_like_quota(first):
-            # Before the transient check, not after: the two overlap, and
-            # spending the retry on a quota rejection burns a second call to
-            # be told the same thing, then reports it as a network problem.
-            raise _quota_exceeded(first, "Gemini quota exhausted") from first
+    started = time.monotonic()
+    deadline = started + _RETRY_BUDGET_SECONDS
+    attempts = settings.gemini_max_attempts
 
-        if not _looks_transient(first):
-            # A rejected request or a bad key will fail the same way twice.
-            raise GeminiError(f"{type(first).__name__}: {first}") from first
+    response = None
+    last: BaseException | None = None
 
-        time.sleep(_RETRY_BACKOFF_SECONDS)
+    for attempt in range(1, attempts + 1):
         try:
             response = _once()
-        except Exception as second:
-            # Checked again on the way out: a dropped connection can retry
-            # into a quota wall, and that is a 429 rather than the 504 the
-            # first failure on its own would have earned.
-            if _looks_like_quota(second):
-                raise _quota_exceeded(second, "Gemini quota exhausted on retry") from second
+            last = None
+            break
+        except Exception as exc:
+            if not _looks_transient(exc):
+                # A rejected request or a bad key will fail the same way twice.
+                raise GeminiError(f"{type(exc).__name__}: {exc}") from exc
 
-            raise GeminiTimeout(
-                f"Gemini was unreachable after one retry: {type(second).__name__}: {second}"
-            ) from second
+            last = exc
+
+            # If the API said how long to wait, believe it over the backoff
+            # curve -- it knows whether this clears in ten seconds or tomorrow.
+            asked = _retry_after(exc)
+            delay = max(_backoff(attempt), asked or 0.0)
+
+            if asked is not None and asked > _RETRY_BUDGET_SECONDS:
+                raise _quota_exceeded(exc, asked) from exc
+
+            if attempt == attempts:
+                break
+
+            if time.monotonic() + delay >= deadline:
+                # Sleeping would spend the budget without leaving time for the
+                # attempt it is waiting for, so stop here and report honestly
+                # rather than waiting out the clock to fail anyway.
+                break
+            time.sleep(delay)
+
+    if last is not None:
+        elapsed = time.monotonic() - started
+        raise GeminiTimeout(
+            f"Gemini was unreachable after {attempt} attempt"
+            f"{'s' if attempt != 1 else ''} over {elapsed:.0f}s: "
+            f"{type(last).__name__}: {last}"
+        ) from last
 
     # With a response_schema the SDK parses and validates for us, and leaves
     # `parsed` as None when the model returned something that does not fit.

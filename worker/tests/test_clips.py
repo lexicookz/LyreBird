@@ -386,14 +386,21 @@ def fail_analysis_with(monkeypatch, exception):
     return deleted
 
 
+# GeminiQuotaExceeded carries prose meant for the screen, not a stack trace,
+# which is why the route writes it to error_message unprefixed where the other
+# two failures get an "Analysis ..." prefix.
+QUOTA_MESSAGE = (
+    "The Gemini key has used its quota for now -- the API asks us to wait "
+    "about 16 hours."
+)
+
+
 def test_analyse_returns_429_with_retry_after_when_the_quota_is_spent(monkeypatch):
     fake_client = TrackingClient([clip_row()])
     monkeypatch.setattr(clips, "get_client", lambda: fake_client)
     deleted = fail_analysis_with(
         monkeypatch,
-        clips.GeminiQuotaExceeded(
-            "Gemini quota exhausted: out of quota", retry_after_seconds=53
-        ),
+        clips.GeminiQuotaExceeded(QUOTA_MESSAGE, retry_after_seconds=57591),
     )
 
     response = client.post(f"/clips/{CLIP_ID}/analyse")
@@ -401,20 +408,29 @@ def test_analyse_returns_429_with_retry_after_when_the_quota_is_spent(monkeypatc
     assert response.status_code == 429
     # Without the header the app has nothing to back off by, so it retries
     # straight back into the same wall.
-    assert response.headers["Retry-After"] == "53"
-    assert response.json() == {"detail": "Gemini quota exhausted: out of quota"}
+    assert response.headers["Retry-After"] == "57591"
+    assert response.json() == {"detail": QUOTA_MESSAGE}
     # Still recorded on the row: a clip left at 'processing' is
-    # indistinguishable from one still queued, whatever the reason.
+    # indistinguishable from one still queued, whatever the reason. Verbatim,
+    # because the message is already what the user should read.
     assert fake_client.updates == [
-        {
-            "status": "failed",
-            "error_message": (
-                "Analysis hit the Gemini quota: Gemini quota exhausted: out of quota"
-            ),
-        },
+        {"status": "failed", "error_message": QUOTA_MESSAGE},
     ]
     # The upload is released even though the analysis never ran.
     assert deleted == ["files/abc123"]
+
+
+def test_analyse_omits_retry_after_when_the_api_did_not_say_how_long(monkeypatch):
+    """retry_after_seconds is optional -- a quota rejection that carried no
+    RetryInfo still has to come back as a 429, just without the header."""
+    fake_client = TrackingClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+    fail_analysis_with(monkeypatch, clips.GeminiQuotaExceeded(QUOTA_MESSAGE))
+
+    response = client.post(f"/clips/{CLIP_ID}/analyse")
+
+    assert response.status_code == 429
+    assert "Retry-After" not in response.headers
 
 
 def test_analyse_still_returns_504_when_gemini_is_unreachable(monkeypatch):

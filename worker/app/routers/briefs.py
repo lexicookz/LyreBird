@@ -107,15 +107,15 @@ def _generate_and_insert(
     try:
         draft, used_version = write_brief(analysis["payload"], profile, prompt_version)
     except GeminiQuotaExceeded as exc:
-        # First of the three, because it is a subclass of GeminiError and
-        # would otherwise be swallowed as a 422 -- reporting a spent quota as
-        # a bad model response, which is the one reading that tells the app to
-        # stop rather than come back.
-        raise HTTPException(
-            status_code=429,
-            detail=str(exc),
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
+        # Before GeminiTimeout: a quota failure is a GeminiError too, and
+        # 422 would tell the screen the brief was malformed when the truth is
+        # that the key is spent. Matches the handling in routers/clips.py.
+        headers = (
+            {"Retry-After": str(int(exc.retry_after_seconds))}
+            if exc.retry_after_seconds
+            else None
+        )
+        raise HTTPException(status_code=429, detail=str(exc), headers=headers) from exc
     except GeminiTimeout as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except GeminiError as exc:

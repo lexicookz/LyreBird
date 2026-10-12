@@ -157,6 +157,17 @@ def test_create_returns_429_with_retry_after_when_the_quota_is_spent(monkeypatch
     assert response.json() == {"detail": "Gemini quota exhausted: out of quota"}
 
 
+def test_create_omits_retry_after_when_the_api_did_not_say_how_long(monkeypatch):
+    """retry_after_seconds is optional -- a quota rejection that carried no
+    RetryInfo still has to come back as a 429, just without the header."""
+    fail_with(monkeypatch, briefs.GeminiQuotaExceeded("quota is gone"))
+
+    response = client.post("/briefs", json=REQUEST)
+
+    assert response.status_code == 429
+    assert "Retry-After" not in response.headers
+
+
 def test_create_still_returns_504_when_gemini_is_unreachable(monkeypatch):
     fail_with(monkeypatch, briefs.GeminiTimeout("Gemini was unreachable after one retry"))
 

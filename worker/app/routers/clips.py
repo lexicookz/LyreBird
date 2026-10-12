@@ -275,22 +275,21 @@ def analyse_clip(
             uploaded_name = uploaded.name
             result, used_version = analyse(uploaded, prompt_version)
         except GeminiQuotaExceeded as exc:
-            # Above the GeminiError branch it inherits from, or a spent
-            # quota gets reported as a malformed response. The row still
-            # records the failure -- a clip left at 'processing' is
-            # indistinguishable from one still queued however it failed --
-            # but the response carries Retry-After, so the app waits the
-            # quota window out instead of retrying straight back into it.
-            _record_failure(client, clip.id, f"Analysis hit the Gemini quota: {exc}")
-            raise HTTPException(
-                status_code=429,
-                detail=str(exc),
-                headers={"Retry-After": str(exc.retry_after_seconds)},
-            ) from exc
+            # 429, not 504. The app turns a 504 into "try again in a moment",
+            # which is wrong by most of a day when the free tier's twenty
+            # calls are gone -- and this one is not worth repeating until the
+            # quota resets, so it must not read like the retryable case.
+            _record_failure(client, clip.id, str(exc))
+            headers = (
+                {"Retry-After": str(int(exc.retry_after_seconds))}
+                if exc.retry_after_seconds
+                else None
+            )
+            raise HTTPException(status_code=429, detail=str(exc), headers=headers) from exc
         except GeminiTimeout as exc:
-            # Already retried once inside analyse(). 504 rather than 422: the
-            # request is worth repeating later, which a malformed response is
-            # not.
+            # Retried inside analyse() until the budget ran out. 504 rather
+            # than 422: the request is worth repeating later, which a
+            # malformed response is not.
             _record_failure(client, clip.id, f"Analysis timed out: {exc}")
             raise HTTPException(status_code=504, detail=str(exc)) from exc
         except GeminiError as exc:
