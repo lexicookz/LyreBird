@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from app.brief_schema import BrandProfile, to_brief_columns
 from app.config import settings
 from app.db import get_client
-from app.gemini import GeminiError, GeminiTimeout, write_brief
+from app.gemini import GeminiError, GeminiQuotaExceeded, GeminiTimeout, write_brief
 from app.models import Brand
 from app.prompts import PromptError, load as load_prompt, versions
 
@@ -106,6 +106,16 @@ def _generate_and_insert(
 
     try:
         draft, used_version = write_brief(analysis["payload"], profile, prompt_version)
+    except GeminiQuotaExceeded as exc:
+        # Before GeminiTimeout: a quota failure is a GeminiError too, and
+        # 422 would tell the screen the brief was malformed when the truth is
+        # that the key is spent. Matches the handling in routers/clips.py.
+        headers = (
+            {"Retry-After": str(int(exc.retry_after_seconds))}
+            if exc.retry_after_seconds
+            else None
+        )
+        raise HTTPException(status_code=429, detail=str(exc), headers=headers) from exc
     except GeminiTimeout as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except GeminiError as exc:
