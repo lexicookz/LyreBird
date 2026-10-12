@@ -13,11 +13,39 @@ key belongs in this table.
 | `/briefs`                       | POST   | `BriefRequest`: `{ "clip_id": UUID, "brand_id": UUID }`; optional `?prompt_version=brief-v1` | `BriefResponse`: `brief_id`, `clip_id`, `brand_id`, `analysis_id`, `model_version`, `prompt_version`, `hook`, `script`, `shot_list`, `caption`, `hashtags`, `cta`, `payload` | `200` written · `400` unknown `prompt_version` · `403` clip and brand have different `owner_id` · `404` no clip, or no brand · `409` the clip has no analysis yet, or the `brands` row will not map to a `BrandProfile` · `422` `GeminiError` · `429` `GeminiQuotaExceeded` (usually adds `Retry-After`) · `504` `GeminiTimeout` · `500` brief generated but the `briefs` insert returned no rows |
 | `/briefs/{brief_id}/regenerate` | POST   | no body; `brief_id` path param (UUID); optional `?prompt_version=brief-v1` | `BriefResponse` — same shape; always a new row                                                                                                           | as `POST /briefs`, plus `404` no brief with that id                                                                                                                                                                                                                                                                          |
 | `/briefs/prompt-versions`       | GET    | —                                                                       | `["brief-v1"]` — oldest first                                                                                                                            | `200`                                                                                                                                                                                                                                                                                                                        |
+| `/recordings/{recording_id}/split` | POST | no body; `recording_id` path param (UUID) | `SplitResult`: `recording_id`, `clips` (each `clip_id`, `storage_path`, `position_in_parent`, `start_seconds`, `end_seconds`, `duration_seconds`, `bytes`), `boundaries` (detected transition times, seconds), `duration_seconds`, `original_deleted`, `already_split` | `200` split, or already split (`already_split: true`, spans and byte counts `0`) · `404` no recording row, or the file could not be downloaded from `recordings` · `409` the recording has no `storage_path`, or it is not under `<owner_id>/` · `422` the duration could not be read, boundary detection failed, ffmpeg failed (`MediaError`), or more than 60 segments were detected · `500` segments uploaded but fewer `clips` rows were written than expected |
 
 Errors are FastAPI's default shape, `{ "detail": "..." }`. A path or query
 param that is not a well-formed UUID is rejected by FastAPI itself as a `422`
 before any handler runs, which is why `422` can also mean "bad request" on
 endpoints that otherwise use it for a model failure.
+
+
+## Splitting a recording
+
+`POST /recordings/{recording_id}/split` cuts a screen recording into one clip
+per video in the feed, using the detector in `app/scroll.py` (frame difference
+to propose a boundary, vertical travel to confirm it -- see
+`spikes/scroll-detection/README.md`).
+
+Two things a caller should know:
+
+- **It is slow and synchronous.** Every segment is re-encoded, because cutting
+  with `-c copy` would land on the nearest keyframe and start each clip with
+  the tail of the previous video. Budget roughly the length of the recording
+  again, more on Render's shared CPU.
+- **It is idempotent.** A recording already marked `split` returns its existing
+  clips with `already_split: true` rather than cutting again. A slow endpoint
+  gets retried, and splitting twice would duplicate every clip.
+
+Ordering is deliberate: segments are uploaded, then the `clips` rows are
+written, then the recording is marked `split`, and only then is the original
+deleted. Any failure before that last step leaves the recording exactly as it
+was.
+
+**The boundaries are not validated against real footage yet.** BE-21 measured
+the detector on a corpus built with ffmpeg rather than a phone, so treat the
+clip edges as good enough to show someone, not as correct.
 
 ## The three Gemini failure modes
 

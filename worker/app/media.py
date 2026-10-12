@@ -96,6 +96,48 @@ def downscale_to_480p(source: Path, destination: Path) -> None:
     ])
 
 
+def cut_segment(source: Path, destination: Path, start: float, end: float) -> None:
+    """Cut [start, end) out of source, re-encoding.
+
+    `-ss` before `-i` seeks the input, which is fast but lands on the nearest
+    keyframe before the mark. With `-c copy` that is the cut you get, and a
+    phone recording's keyframes are seconds apart -- so a clip would begin
+    with the tail of the previous video. Re-encoding is what makes the
+    boundary the one the detector found. The transcode costs real time, which
+    is why a split is a slow endpoint and not a synchronous one forever.
+
+    `-ss` still goes before `-i` for the fast seek; `-accurate_seek` (the
+    default, stated here because the behaviour depends on it) then decodes
+    from the keyframe to the exact mark and discards the difference.
+    """
+    if end <= start:
+        raise MediaError(f"segment end {end} is not after start {start}")
+
+    _run([
+        "ffmpeg",
+        "-y",
+        "-accurate_seek",
+        "-ss", f"{start:.3f}",
+        "-t", f"{end - start:.3f}",
+        "-i", str(source),
+        "-vf", f"scale=-2:{TARGET_HEIGHT}",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", str(VIDEO_CRF),
+        "-c:a", "aac",
+        "-b:a", AUDIO_BITRATE,
+        # A segment cut from the middle of a file keeps the source's start
+        # time otherwise, so every clip but the first would report a
+        # non-zero position and seek oddly in the player.
+        "-reset_timestamps", "1",
+        "-movflags", "+faststart",
+        str(destination),
+    ])
+
+    if not destination.exists() or destination.stat().st_size == 0:
+        raise MediaError(f"cutting {start:.3f}-{end:.3f}s produced an empty file")
+
+
 def extract_thumbnail(source: Path, destination: Path, at_seconds: float = THUMBNAIL_AT_SECONDS) -> None:
     """Single JPEG frame at `at_seconds`.
 
