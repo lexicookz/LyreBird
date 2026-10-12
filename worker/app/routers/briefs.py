@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from app.brief_schema import BrandProfile, to_brief_columns
 from app.config import settings
 from app.db import get_client
-from app.gemini import GeminiError, GeminiTimeout, write_brief
+from app.gemini import GeminiError, GeminiQuotaExceeded, GeminiTimeout, write_brief
 from app.models import Brand
 from app.prompts import PromptError, load as load_prompt, versions
 
@@ -106,6 +106,16 @@ def _generate_and_insert(
 
     try:
         draft, used_version = write_brief(analysis["payload"], profile, prompt_version)
+    except GeminiQuotaExceeded as exc:
+        # First of the three, because it is a subclass of GeminiError and
+        # would otherwise be swallowed as a 422 -- reporting a spent quota as
+        # a bad model response, which is the one reading that tells the app to
+        # stop rather than come back.
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except GeminiTimeout as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except GeminiError as exc:

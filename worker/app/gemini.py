@@ -7,6 +7,8 @@ keeps the model call testable on its own.
 
 from __future__ import annotations
 
+import math
+import re
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -66,6 +68,33 @@ _TRANSIENT_MARKERS = (
     "reset by peer",
 )
 
+# Substrings that mean "the key is out of quota". Checked *before*
+# _TRANSIENT_MARKERS, because the two overlap -- a quota rejection often says
+# "try again later", which reads as transient -- and the handling is opposite:
+# a transport blip is worth retrying two seconds later, a spent quota is not.
+_QUOTA_MARKERS = (
+    "resource_exhausted",
+    "quota",
+    "rate limit",
+    "too many requests",
+)
+
+# Google returns a RetryInfo detail alongside a 429, as a protobuf duration
+# string: "retryDelay": "53s". Worth parsing rather than always guessing,
+# because it is the only part of the response that knows when the quota
+# window actually rolls over. The character class spans the punctuation
+# between the key and the value, which varies with how the SDK stringifies
+# the error.
+_RETRY_DELAY = re.compile(
+    r"retry[_-]?delay[^0-9]{0,8}(\d+(?:\.\d+)?)s",
+    re.IGNORECASE,
+)
+
+# Used when the rejection carries no RetryInfo. A minute is a guess, but a
+# wrong guess the app can act on beats no header at all, which leaves it
+# retrying in a tight loop against a wall.
+_DEFAULT_RETRY_AFTER_SECONDS = 60
+
 
 class GeminiError(RuntimeError):
     """The model call failed, or returned something that is not a valid
@@ -78,9 +107,49 @@ class GeminiTimeout(GeminiError):
     network problem as a bad analysis."""
 
 
+class GeminiQuotaExceeded(GeminiError):
+    """The API key is out of quota.
+
+    A sibling of GeminiTimeout rather than a plain GeminiError because it is
+    the third distinct outcome: the request was well-formed and the API was
+    reachable, so repeating it unchanged will work -- just not yet. Carries
+    `retry_after_seconds` so the router can say when, which is the difference
+    between an app that backs off and one that hammers a spent quota.
+    """
+
+    def __init__(self, message: str, retry_after_seconds: int) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
 def _looks_transient(exc: BaseException) -> bool:
     text = f"{type(exc).__name__} {exc}".lower()
     return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
+def _looks_like_quota(exc: BaseException) -> bool:
+    """Whether a raw SDK exception is a quota rejection.
+
+    The status code is checked first and the message only as a fallback: the
+    SDK sets `code` on its own ClientError, but the same rejection can arrive
+    wrapped by an underlying transport library with nothing but a string.
+    """
+    for attribute in ("code", "status_code"):
+        if getattr(exc, attribute, None) == 429:
+            return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _QUOTA_MARKERS)
+
+
+def _quota_exceeded(exc: BaseException, what: str) -> GeminiQuotaExceeded:
+    match = _RETRY_DELAY.search(str(exc))
+    if match:
+        # Round up: a Retry-After one second short sends the caller straight
+        # back into the same rejection.
+        retry_after = max(1, math.ceil(float(match.group(1))))
+    else:
+        retry_after = _DEFAULT_RETRY_AFTER_SECONDS
+    return GeminiQuotaExceeded(f"{what}: {exc}", retry_after_seconds=retry_after)
 
 
 @lru_cache(maxsize=1)
@@ -102,6 +171,8 @@ def upload_and_wait(path: Path):
     try:
         uploaded = client.files.upload(file=str(path))
     except Exception as exc:
+        if _looks_like_quota(exc):
+            raise _quota_exceeded(exc, "Gemini quota exhausted on upload") from exc
         if _looks_transient(exc):
             raise GeminiTimeout(f"Could not reach Gemini to upload the video: {exc}") from exc
         raise GeminiError(f"Upload rejected: {type(exc).__name__}: {exc}") from exc
@@ -153,6 +224,12 @@ def _call_model(contents: list, schema: type[BaseModel]) -> BaseModel:
     try:
         response = _once()
     except Exception as first:
+        if _looks_like_quota(first):
+            # Before the transient check, not after: the two overlap, and
+            # spending the retry on a quota rejection burns a second call to
+            # be told the same thing, then reports it as a network problem.
+            raise _quota_exceeded(first, "Gemini quota exhausted") from first
+
         if not _looks_transient(first):
             # A rejected request or a bad key will fail the same way twice.
             raise GeminiError(f"{type(first).__name__}: {first}") from first
@@ -161,6 +238,12 @@ def _call_model(contents: list, schema: type[BaseModel]) -> BaseModel:
         try:
             response = _once()
         except Exception as second:
+            # Checked again on the way out: a dropped connection can retry
+            # into a quota wall, and that is a 429 rather than the 504 the
+            # first failure on its own would have earned.
+            if _looks_like_quota(second):
+                raise _quota_exceeded(second, "Gemini quota exhausted on retry") from second
+
             raise GeminiTimeout(
                 f"Gemini was unreachable after one retry: {type(second).__name__}: {second}"
             ) from second

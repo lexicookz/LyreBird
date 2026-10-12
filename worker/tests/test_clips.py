@@ -360,3 +360,100 @@ def test_prepare_succeeds_when_original_file_cannot_be_deleted(monkeypatch):
     assert body["duration_seconds"] == 12.5
     assert body["original_deleted"] is False
     assert body["already_prepared"] is False
+
+
+class FakeUpload:
+    """Stands in for the handle upload_and_wait returns."""
+
+    name = "files/abc123"
+
+
+def fail_analysis_with(monkeypatch, exception):
+    """Point the analyse route at a Gemini that fails one specific way.
+
+    Returns the list of uploads that were released, so a test can check the
+    file was cleaned up on the way out rather than left to expire on Google's
+    side.
+    """
+    deleted = []
+    monkeypatch.setattr(clips, "upload_and_wait", lambda _source: FakeUpload())
+    monkeypatch.setattr(clips, "delete_file", lambda name: deleted.append(name))
+
+    def fail(_uploaded, _prompt_version):
+        raise exception
+
+    monkeypatch.setattr(clips, "analyse", fail)
+    return deleted
+
+
+def test_analyse_returns_429_with_retry_after_when_the_quota_is_spent(monkeypatch):
+    fake_client = TrackingClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+    deleted = fail_analysis_with(
+        monkeypatch,
+        clips.GeminiQuotaExceeded(
+            "Gemini quota exhausted: out of quota", retry_after_seconds=53
+        ),
+    )
+
+    response = client.post(f"/clips/{CLIP_ID}/analyse")
+
+    assert response.status_code == 429
+    # Without the header the app has nothing to back off by, so it retries
+    # straight back into the same wall.
+    assert response.headers["Retry-After"] == "53"
+    assert response.json() == {"detail": "Gemini quota exhausted: out of quota"}
+    # Still recorded on the row: a clip left at 'processing' is
+    # indistinguishable from one still queued, whatever the reason.
+    assert fake_client.updates == [
+        {
+            "status": "failed",
+            "error_message": (
+                "Analysis hit the Gemini quota: Gemini quota exhausted: out of quota"
+            ),
+        },
+    ]
+    # The upload is released even though the analysis never ran.
+    assert deleted == ["files/abc123"]
+
+
+def test_analyse_still_returns_504_when_gemini_is_unreachable(monkeypatch):
+    """Guards the except order from the other side: the quota branch sits
+    above this one, and both are subclasses of GeminiError."""
+    fake_client = TrackingClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+    fail_analysis_with(
+        monkeypatch, clips.GeminiTimeout("Gemini was unreachable after one retry")
+    )
+
+    response = client.post(f"/clips/{CLIP_ID}/analyse")
+
+    assert response.status_code == 504
+    assert "Retry-After" not in response.headers
+    assert fake_client.updates == [
+        {
+            "status": "failed",
+            "error_message": "Analysis timed out: Gemini was unreachable after one retry",
+        },
+    ]
+
+
+def test_analyse_still_returns_422_when_the_response_does_not_validate(monkeypatch):
+    fake_client = TrackingClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+    fail_analysis_with(
+        monkeypatch, clips.GeminiError("Gemini returned a response that does not match")
+    )
+
+    response = client.post(f"/clips/{CLIP_ID}/analyse")
+
+    assert response.status_code == 422
+    assert "Retry-After" not in response.headers
+    assert fake_client.updates == [
+        {
+            "status": "failed",
+            "error_message": (
+                "Analysis failed: Gemini returned a response that does not match"
+            ),
+        },
+    ]

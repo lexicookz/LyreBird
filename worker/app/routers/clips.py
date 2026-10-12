@@ -11,7 +11,14 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.db import get_client
-from app.gemini import GeminiError, GeminiTimeout, analyse, delete_file, upload_and_wait
+from app.gemini import (
+    GeminiError,
+    GeminiQuotaExceeded,
+    GeminiTimeout,
+    analyse,
+    delete_file,
+    upload_and_wait,
+)
 from app.prompts import PromptError, load as load_prompt, versions
 from app.media import MediaError, downscale_to_480p, extract_thumbnail, probe_duration_seconds
 from app.models import Clip
@@ -267,6 +274,19 @@ def analyse_clip(
             uploaded = upload_and_wait(source)
             uploaded_name = uploaded.name
             result, used_version = analyse(uploaded, prompt_version)
+        except GeminiQuotaExceeded as exc:
+            # Above the GeminiError branch it inherits from, or a spent
+            # quota gets reported as a malformed response. The row still
+            # records the failure -- a clip left at 'processing' is
+            # indistinguishable from one still queued however it failed --
+            # but the response carries Retry-After, so the app waits the
+            # quota window out instead of retrying straight back into it.
+            _record_failure(client, clip.id, f"Analysis hit the Gemini quota: {exc}")
+            raise HTTPException(
+                status_code=429,
+                detail=str(exc),
+                headers={"Retry-After": str(exc.retry_after_seconds)},
+            ) from exc
         except GeminiTimeout as exc:
             # Already retried once inside analyse(). 504 rather than 422: the
             # request is worth repeating later, which a malformed response is
