@@ -19,6 +19,7 @@ jest.mock('../lib/clips', () => ({
   fetchTags: jest.fn(async () => []),
   uploadClip: jest.fn(),
   requestAnalysis: jest.fn(),
+  markAnalysisFailed: jest.fn(),
   deleteClip: jest.fn(),
 }));
 
@@ -132,6 +133,7 @@ describe('library data', () => {
         clipRow(`db-${a.fileName}`, a.fileName ?? 'clip', 'processing')
       );
       clipsApi.requestAnalysis.mockResolvedValue(undefined);
+      clipsApi.markAnalysisFailed.mockResolvedValue(undefined);
       clipsApi.deleteClip.mockResolvedValue(undefined);
     });
 
@@ -194,6 +196,37 @@ describe('library data', () => {
       // lost video, and the row is still there to retry from.
       expect(result.current.clips).toHaveLength(1);
       expect(clipsApi.uploadClip).toHaveBeenCalledTimes(1);
+
+      // But it has to say so. This was swallowed, which is how an
+      // unreachable worker ended up looking like a slow one.
+      expect(result.current.error).toContain('worker unreachable');
+      expect(clipsApi.markAnalysisFailed).toHaveBeenCalledWith(
+        'db-one.mp4',
+        expect.stringContaining('worker unreachable')
+      );
+    });
+
+    test('a failed retry is written to the row, not just to the screen', async () => {
+      clipsApi.fetchLibrary.mockResolvedValue({
+        clips: [clipRow('db-one.mp4', 'one.mp4', 'failed')],
+        analyses: [], hasMore: false, total: 1,
+      });
+      clipsApi.requestAnalysis.mockRejectedValue(new Error('worker unreachable'));
+
+      const { result } = await renderHook(() => useLibrary());
+      await act(async () => {});
+      await act(async () => {
+        await result.current.retryAnalysis('db-one.mp4');
+      });
+
+      // retryAnalysis refreshes straight afterwards, so a status set only in
+      // React state is overwritten by the re-read and the clip goes back to
+      // looking like it is processing.
+      expect(clipsApi.markAnalysisFailed).toHaveBeenCalledWith(
+        'db-one.mp4',
+        expect.stringContaining('worker unreachable')
+      );
+      expect(result.current.error).toContain('worker unreachable');
     });
 
     test('retrying actually re-runs the analysis', async () => {
