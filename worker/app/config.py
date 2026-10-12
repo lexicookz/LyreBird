@@ -31,11 +31,20 @@ class Settings(BaseSettings):
     # so changing it here is what makes old rows distinguishable from new.
     gemini_model: str = Field(default="gemini-3.6-flash", min_length=1)
 
+    # How many times a model call may be attempted before giving up. Raise it
+    # from the Render dashboard if Gemini is having a bad day -- the backoff
+    # between attempts is capped by a total budget, so a larger number costs
+    # nothing when the API is healthy and buys patience when it is not.
+    gemini_max_attempts: int = Field(default=4, ge=1, le=10)
+
     @field_validator("*", mode="after")
     @classmethod
-    def _not_blank(cls, value: str) -> str:
-        # min_length alone would let "   " through.
-        if not value.strip():
+    def _not_blank(cls, value: object) -> object:
+        # min_length alone would let "   " through. Typed as object and
+        # guarded because this runs over every field, and gemini_max_attempts
+        # is an int -- calling .strip() on it would raise AttributeError and
+        # be reported as a missing configuration.
+        if isinstance(value, str) and not value.strip():
             raise ValueError("must not be blank")
         return value
 

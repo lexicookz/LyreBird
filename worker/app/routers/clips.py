@@ -11,7 +11,14 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.db import get_client
-from app.gemini import GeminiError, GeminiTimeout, analyse, delete_file, upload_and_wait
+from app.gemini import (
+    GeminiError,
+    GeminiQuotaExceeded,
+    GeminiTimeout,
+    analyse,
+    delete_file,
+    upload_and_wait,
+)
 from app.prompts import PromptError, load as load_prompt, versions
 from app.media import MediaError, downscale_to_480p, extract_thumbnail, probe_duration_seconds
 from app.models import Clip
@@ -267,10 +274,22 @@ def analyse_clip(
             uploaded = upload_and_wait(source)
             uploaded_name = uploaded.name
             result, used_version = analyse(uploaded, prompt_version)
+        except GeminiQuotaExceeded as exc:
+            # 429, not 504. The app turns a 504 into "try again in a moment",
+            # which is wrong by most of a day when the free tier's twenty
+            # calls are gone -- and this one is not worth repeating until the
+            # quota resets, so it must not read like the retryable case.
+            _record_failure(client, clip.id, str(exc))
+            headers = (
+                {"Retry-After": str(int(exc.retry_after_seconds))}
+                if exc.retry_after_seconds
+                else None
+            )
+            raise HTTPException(status_code=429, detail=str(exc), headers=headers) from exc
         except GeminiTimeout as exc:
-            # Already retried once inside analyse(). 504 rather than 422: the
-            # request is worth repeating later, which a malformed response is
-            # not.
+            # Retried inside analyse() until the budget ran out. 504 rather
+            # than 422: the request is worth repeating later, which a
+            # malformed response is not.
             _record_failure(client, clip.id, f"Analysis timed out: {exc}")
             raise HTTPException(status_code=504, detail=str(exc)) from exc
         except GeminiError as exc:
