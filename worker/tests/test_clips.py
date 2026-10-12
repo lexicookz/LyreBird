@@ -420,6 +420,32 @@ def test_analyse_returns_429_with_retry_after_when_the_quota_is_spent(monkeypatc
     assert deleted == ["files/abc123"]
 
 
+def test_analyse_returns_429_when_the_upload_hits_the_quota(monkeypatch):
+    """The upload is a separate call against the same key and fails before the
+    model is reached, so it has its own route to the 429."""
+    fake_client = TrackingClient([clip_row()])
+    monkeypatch.setattr(clips, "get_client", lambda: fake_client)
+
+    deleted = []
+    monkeypatch.setattr(clips, "delete_file", lambda name: deleted.append(name))
+
+    def fail_upload(_source):
+        raise clips.GeminiQuotaExceeded(QUOTA_MESSAGE, retry_after_seconds=57591)
+
+    monkeypatch.setattr(clips, "upload_and_wait", fail_upload)
+
+    response = client.post(f"/clips/{CLIP_ID}/analyse")
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "57591"
+    assert fake_client.updates == [
+        {"status": "failed", "error_message": QUOTA_MESSAGE},
+    ]
+    # Nothing was uploaded, so there is nothing to release -- the cleanup must
+    # not try to delete a file that never existed.
+    assert deleted == []
+
+
 def test_analyse_omits_retry_after_when_the_api_did_not_say_how_long(monkeypatch):
     """retry_after_seconds is optional -- a quota rejection that carried no
     RetryInfo still has to come back as a 429, just without the header."""

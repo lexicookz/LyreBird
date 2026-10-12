@@ -63,12 +63,13 @@ So the same free-tier 429 can surface either way, and the distinction is the
 useful one: `504` means come back in a moment, `429` means come back when
 `Retry-After` says.
 
-One gap worth knowing about on `/clips/{clip_id}/analyse`: only the model call
-can produce a `429`. The video upload that precedes it runs through
-`upload_and_wait`, which has no quota branch, so a quota rejection on the
-upload itself matches `_TRANSIENT_MARKERS` and comes back as a `504`. Rare --
-the upload is not what the per-day allowance counts -- but a client cannot
-assume every quota failure on this endpoint is a `429`.
+On `/clips/{clip_id}/analyse` the `429` can come from either call against the
+key: the video upload or the model request. The upload has no retry loop, so
+there is no budget to weigh an asked-for delay against — any quota rejection
+there is reported straight away, with `Retry-After` when the API named a delay
+and without it when it did not. An overloaded model is still a `504` on that
+path, delay or no delay: the test is whether the key is out of allowance, not
+whether the API asked us to wait.
 
 ## Rows the analyse and prepare paths write on failure
 

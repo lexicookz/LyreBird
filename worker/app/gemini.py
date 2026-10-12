@@ -125,6 +125,35 @@ def _looks_transient(exc: BaseException) -> bool:
     return any(marker in text for marker in _TRANSIENT_MARKERS)
 
 
+# The quota subset of _TRANSIENT_MARKERS. Those markers answer "is this worth
+# retrying", which is all _call_model needs to ask -- its budget sorts out the
+# rest. upload_and_wait has no retry loop and so no budget, so it has to ask
+# the narrower question directly: is the key out of allowance.
+#
+# Deliberately narrower than "did the API name a delay": an overloaded model
+# sometimes names one too, and a 503 that clears in twenty seconds is a
+# timeout, not a spent quota.
+_QUOTA_MARKERS = (
+    "429",
+    "resource_exhausted",
+    "rate limit",
+)
+
+
+def _looks_like_quota(exc: BaseException) -> bool:
+    """Whether a raw SDK exception is the key running out of allowance.
+
+    The status code is checked first and the message only as a fallback: the
+    SDK sets `code` on its own ClientError, but the same rejection can arrive
+    wrapped by an underlying transport library with nothing but a string.
+    """
+    for attribute in ("code", "status_code"):
+        if getattr(exc, attribute, None) == 429:
+            return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _QUOTA_MARKERS)
+
+
 # Gemini answers a 429 with how long to wait, in two shapes in the same
 # payload: a RetryInfo field, and a sentence. Either is worth more than a
 # guess -- "retry in 16 hours" and "retry in 20 seconds" arrive as the same
@@ -160,7 +189,9 @@ def _humanise(seconds: float) -> str:
     return f"{seconds:.0f} seconds"
 
 
-def _quota_exceeded(exc: BaseException, retry_after: float) -> GeminiQuotaExceeded:
+def _quota_exceeded(
+    exc: BaseException, retry_after: float | None
+) -> GeminiQuotaExceeded:
     """The message a user will read off the clip row, not a stack trace.
 
     error_message goes straight to the screen, so it has to say what is
@@ -168,12 +199,21 @@ def _quota_exceeded(exc: BaseException, retry_after: float) -> GeminiQuotaExceed
     generativelanguage.googleapis.com/generate_content_free_tier_requests"
     does not tell anyone that the team shares one key and has used the day's
     twenty analyses.
+
+    retry_after is optional because the upload path can recognise a spent
+    quota without being told how long to wait. Saying so is better than
+    implying a number we do not have.
     """
+    waiting = (
+        f"the API asks us to wait {_humanise(retry_after)}"
+        if retry_after is not None
+        else "the API did not say for how long"
+    )
     return GeminiQuotaExceeded(
-        f"The Gemini key has used its quota for now -- the API asks us to wait "
-        f"{_humanise(retry_after)}. On the free tier that allowance is shared "
-        f"by everyone using the key, so this is not something retrying will "
-        f"fix. Original error: {type(exc).__name__}: {exc}",
+        f"The Gemini key has used its quota for now -- {waiting}. On the free "
+        f"tier that allowance is shared by everyone using the key, so this is "
+        f"not something retrying will fix. Original error: "
+        f"{type(exc).__name__}: {exc}",
         retry_after_seconds=retry_after,
     )
 
@@ -209,6 +249,17 @@ def upload_and_wait(path: Path):
     try:
         uploaded = client.files.upload(file=str(path))
     except Exception as exc:
+        if _looks_like_quota(exc):
+            # Checked before _looks_transient, which matches every quota
+            # rejection too now that 429 is one of its markers.
+            #
+            # There is no retry loop here, so nothing absorbs the wait the way
+            # _call_model's budget does, and the whole delay falls to the
+            # caller however short it is. Leaving this as a GeminiTimeout
+            # would hand the app a 504, which it renders as "try again in a
+            # moment" -- wrong by most of a day once the free tier's twenty
+            # calls are gone, and with no Retry-After to correct it.
+            raise _quota_exceeded(exc, _retry_after(exc)) from exc
         if _looks_transient(exc):
             raise GeminiTimeout(f"Could not reach Gemini to upload the video: {exc}") from exc
         raise GeminiError(f"Upload rejected: {type(exc).__name__}: {exc}") from exc

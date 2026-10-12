@@ -258,3 +258,104 @@ def test_one_attempt_is_still_allowed(calls, no_sleeping, monkeypatch):
     assert len(attempts) == 1
     assert no_sleeping == []
     assert "1 attempt " in str(caught.value)
+
+
+# ---------- the upload path ----------
+# The upload is a separate call against the same key, and it has no retry loop
+# of its own. Whatever it raises is final, so a spent quota has to be named as
+# one here rather than left to leave as a timeout.
+
+
+@pytest.fixture
+def uploads(monkeypatch):
+    """Drive files.upload from one outcome."""
+
+    def arrange(outcome):
+        attempts: list[int] = []
+
+        class FakeFiles:
+            def upload(self, **kwargs):
+                attempts.append(1)
+                raise outcome
+
+        class FakeClient:
+            files = FakeFiles()
+
+        monkeypatch.setattr(gemini, "get_client", lambda: FakeClient())
+        return attempts
+
+    return arrange
+
+
+def test_an_upload_that_hits_the_daily_quota_says_so(uploads):
+    attempts = uploads(daily_quota_gone())
+
+    with pytest.raises(GeminiQuotaExceeded) as caught:
+        gemini.upload_and_wait("video.mp4")
+
+    assert len(attempts) == 1
+    # The delay reaches the caller, which is the whole difference: the router
+    # turns it into Retry-After, and without it the app is told to try again
+    # in a moment.
+    assert caught.value.retry_after_seconds == pytest.approx(57591)
+
+
+def test_an_upload_quota_without_a_stated_delay_is_still_a_quota_error(uploads):
+    """Recognising the quota does not depend on being told how long.
+
+    retry_after_seconds is None rather than a guess, and the router omits
+    Retry-After instead of inventing one.
+    """
+    uploads(RuntimeError("ClientError: 429 RESOURCE_EXHAUSTED. Quota exceeded."))
+
+    with pytest.raises(GeminiQuotaExceeded) as caught:
+        gemini.upload_and_wait("video.mp4")
+
+    assert caught.value.retry_after_seconds is None
+    assert "did not say for how long" in str(caught.value)
+
+
+def test_an_overloaded_model_is_still_a_timeout_on_upload(uploads):
+    """The guard on the new branch: 429 is a transient marker, so the quota
+    check runs first -- but it must not catch capacity failures with it."""
+    uploads(overloaded())
+
+    with pytest.raises(GeminiTimeout) as caught:
+        gemini.upload_and_wait("video.mp4")
+
+    assert not isinstance(caught.value, GeminiQuotaExceeded)
+
+
+def test_an_overloaded_model_that_names_a_delay_is_still_a_timeout():
+    """Why the check is _looks_like_quota and not "did the API name a delay".
+
+    A 503 can carry a retry delay too, and it is a timeout that clears in
+    seconds -- not an allowance that is gone.
+    """
+    exc = RuntimeError(
+        "ServerError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': "
+        "'This model is currently experiencing high demand. Please retry in 20s.'}}"
+    )
+
+    assert gemini._retry_after(exc) == pytest.approx(20)
+    assert not gemini._looks_like_quota(exc)
+    assert gemini._looks_transient(exc)
+
+
+def test_a_rejected_upload_is_still_a_plain_error(uploads):
+    uploads(RuntimeError("ClientError: 400 INVALID_ARGUMENT. Unsupported file type."))
+
+    with pytest.raises(GeminiError) as caught:
+        gemini.upload_and_wait("video.mp4")
+
+    assert not isinstance(caught.value, (GeminiQuotaExceeded, GeminiTimeout))
+
+
+def test_the_status_code_alone_identifies_a_quota_rejection():
+    """The SDK sets code on its own ClientError; a wrapper may leave only a
+    string, which is why both are checked."""
+
+    class ClientError(Exception):
+        code = 429
+
+    assert gemini._looks_like_quota(ClientError("something went wrong"))
