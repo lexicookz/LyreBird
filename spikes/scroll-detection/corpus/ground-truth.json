@@ -1,0 +1,82 @@
+[
+  {
+    "recording": "rec1-steady.mp4",
+    "fps": 30,
+    "duration_seconds": 27.1,
+    "scroll_transitions": [
+      6.85,
+      13.55,
+      20.25
+    ],
+    "swipe_durations": [
+      0.3,
+      0.3,
+      0.3
+    ],
+    "synthetic": true
+  },
+  {
+    "recording": "rec2-fast-flicks.mp4",
+    "fps": 30,
+    "duration_seconds": 20.31,
+    "scroll_transitions": [
+      3.44,
+      6.305,
+      10.17,
+      13.02,
+      16.37
+    ],
+    "swipe_durations": [
+      0.12,
+      0.15,
+      0.12,
+      0.18,
+      0.12
+    ],
+    "synthetic": true
+  },
+  {
+    "recording": "rec3-slow-drags.mp4",
+    "fps": 30,
+    "duration_seconds": 24.85,
+    "scroll_transitions": [
+      8.725,
+      17.15
+    ],
+    "swipe_durations": [
+      0.55,
+      0.6
+    ],
+    "synthetic": true
+  },
+  {
+    "recording": "rec4-mixed.mp4",
+    "fps": 30,
+    "duration_seconds": 31.85,
+    "scroll_transitions": [
+      4.925,
+      15.625,
+      19.3,
+      27.025
+    ],
+    "swipe_durations": [
+      0.15,
+      0.45,
+      0.2,
+      0.35
+    ],
+    "synthetic": true
+  },
+  {
+    "recording": "rec5-long-watch.mp4",
+    "fps": 30,
+    "duration_seconds": 25.75,
+    "scroll_transitions": [
+      13.875
+    ],
+    "swipe_durations": [
+      0.25
+    ],
+    "synthetic": true
+  }
+]
