@@ -25,6 +25,12 @@ tsconfig.json
 jest.setup.ts
 babel.config.js
 
+# The BE-21 scroll detection spike. 203 MB of it is a virtualenv and corpus
+# videos, and the worker does not import any of it -- app/scroll.py is its own
+# port of the detector. Sending this to the daemon on every Render build is
+# pure waiting.
+spikes
+
 # Secrets and local state.
 .env
 .env.*
