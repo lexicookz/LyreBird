@@ -191,6 +191,11 @@ jest.mock('../lib/briefs', () => {
       rows.push(r);
       return r.id;
     }),
+    requestAlternates: jest.fn(async () => [
+      { line: 'Alt hook one', on_screen_text: 'One', visual: 'Close-up' },
+      { line: 'Alt hook two', on_screen_text: '', visual: 'Wide shot' },
+      { line: 'Alt hook three', on_screen_text: 'Three', visual: '' },
+    ]),
   };
 });
 
@@ -387,7 +392,7 @@ describe('App', () => {
     require('../lib/calendar').__rows.length = 0;
     require('../lib/briefs').__rows.length = 0;
     require('../lib/brands').__rows.length = 0;
-    for (const fn of ['requestBrief', 'requestRegenerate', 'updateBrief']) require('../lib/briefs')[fn].mockClear();
+    for (const fn of ['requestBrief', 'requestRegenerate', 'requestAlternates', 'updateBrief']) require('../lib/briefs')[fn].mockClear();
     require('../lib/brands').saveBrand.mockClear();
   });
 
@@ -677,6 +682,51 @@ describe('App', () => {
     expect(briefsApi.__rows).toHaveLength(2);
     expect(calRows.map((r: any) => r.brief_id)).toEqual([briefsApi.__rows[1].id]);
     expect(calRows[0]).toMatchObject({ scheduled_for: '2026-12-01', status: 'planned' });
+  });
+
+  test('3 alternates offers other hooks, and picking one saves it as the hook line', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const briefsApi = require('../lib/briefs');
+    const id = await briefsApi.requestBrief('cccccccc-0000-4000-8000-000000000001', 'brand-1');
+    const { findByText, findByLabelText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Open my brief'));
+    await fireEvent.press(await findByText('3 alternates'));
+
+    expect(await findByText('Other hooks')).toBeTruthy();
+    expect(briefsApi.requestAlternates).toHaveBeenCalledWith(id);
+    await fireEvent.press(await findByLabelText('Use hook: Alt hook two'));
+
+    await waitFor(() => expect(getByLabelText('Hook line').props.defaultValue).toBe('Alt hook two'));
+    await waitFor(() => expect(briefsApi.updateBrief).toHaveBeenCalledWith(id, { hook: 'Alt hook two' }));
+    // Nothing else about the brief changed, and no new brief was written.
+    expect(briefsApi.__rows).toHaveLength(1);
+    expect(briefsApi.__rows[0].script).toBe('AI script');
+
+    // Reopening shows the same three without asking the AI again.
+    await fireEvent.press(await findByText('3 alternates'));
+    expect(await findByText('Alt hook one')).toBeTruthy();
+    expect(briefsApi.requestAlternates).toHaveBeenCalledTimes(1);
+    expect(queryByText('Writing 3 other hooks…')).toBeNull();
+  });
+
+  test('3 alternates shows the error in the sheet and can try again', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const briefsApi = require('../lib/briefs');
+    await briefsApi.requestBrief('cccccccc-0000-4000-8000-000000000001', 'brand-1');
+    briefsApi.requestAlternates.mockRejectedValueOnce(new Error("Today's AI limit has been used up."));
+    const { findByText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Open my brief'));
+    await fireEvent.press(await findByText('3 alternates'));
+
+    expect(await findByText("Today's AI limit has been used up.")).toBeTruthy();
+    await fireEvent.press(await findByText('Try again'));
+    expect(await findByText('Alt hook one')).toBeTruthy();
   });
 
   // ---------- calendar ----------

@@ -19,6 +19,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.brief_schema import Hook, HookAlternates
 from app.routers import briefs
 
 
@@ -217,3 +218,73 @@ def test_regenerate_keeps_the_other_two_failures_distinct(monkeypatch, exception
     response = client.post(f"/briefs/{BRIEF_ID}/regenerate")
 
     assert response.status_code == expected
+
+
+# ---------- POST /briefs/{brief_id}/alternates ----------
+
+
+def _hook(n):
+    return Hook(line=f"Hook {n}", on_screen_text=f"Text {n}", visual=f"Shot {n}")
+
+
+def alternates_return(monkeypatch, hooks, tables=None):
+    """Stub the model call; FakeTable.insert still raises, so any write fails
+    the test -- alternates must not touch the database."""
+    monkeypatch.setattr(briefs, "get_client", lambda: FakeClient(**(tables or rows())))
+    seen = {}
+
+    def write(payload, profile, current_hook):
+        seen["current_hook"] = current_hook
+        return HookAlternates(hooks=hooks), "hook_alternates-v1"
+
+    monkeypatch.setattr(briefs, "write_hook_alternates", write)
+    return seen
+
+
+def test_alternates_returns_three_hooks_and_writes_nothing(monkeypatch):
+    tables = rows()
+    tables["briefs"][0]["hook"] = "The hook it has now"
+    seen = alternates_return(monkeypatch, [_hook(n) for n in range(1, 5)], tables)
+
+    response = client.post(f"/briefs/{BRIEF_ID}/alternates")
+
+    assert response.status_code == 200
+    body = response.json()
+    # Four came back; the endpoint promises exactly three.
+    assert [h["line"] for h in body["hooks"]] == ["Hook 1", "Hook 2", "Hook 3"]
+    assert body["prompt_version"] == "hook_alternates-v1"
+    # The model is told what the brief already opens with, so it can avoid it.
+    assert seen["current_hook"] == "The hook it has now"
+
+
+def test_alternates_is_a_422_when_fewer_than_three_usable_hooks_come_back(monkeypatch):
+    blank = Hook(line="  ", on_screen_text="", visual="")
+    alternates_return(monkeypatch, [_hook(1), _hook(2), blank])
+
+    response = client.post(f"/briefs/{BRIEF_ID}/alternates")
+
+    assert response.status_code == 422
+
+
+def test_alternates_refuses_a_brief_owned_by_someone_else(monkeypatch):
+    tables = rows()
+    tables["briefs"][0]["owner_id"] = "99999999-9999-4999-8999-999999999999"
+    alternates_return(monkeypatch, [_hook(n) for n in range(1, 4)], tables)
+
+    response = client.post(f"/briefs/{BRIEF_ID}/alternates")
+
+    assert response.status_code == 403
+
+
+def test_alternates_returns_429_with_retry_after_when_the_quota_is_spent(monkeypatch):
+    monkeypatch.setattr(briefs, "get_client", lambda: FakeClient(**rows()))
+
+    def fail(*_args):
+        raise briefs.GeminiQuotaExceeded("quota is gone", retry_after_seconds=30)
+
+    monkeypatch.setattr(briefs, "write_hook_alternates", fail)
+
+    response = client.post(f"/briefs/{BRIEF_ID}/alternates")
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "30"

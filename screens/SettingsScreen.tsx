@@ -99,7 +99,7 @@ export default function SettingsScreen({
   }, []);
 
   function confirmSignOut() {
-    Alert.alert('Sign out?', 'Your videos, briefs and brand stay on this phone for when you log back in.', [
+    Alert.alert('Sign out?', 'Your videos, briefs and brand stay saved in your account for when you log back in.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: onSignOut },
     ]);

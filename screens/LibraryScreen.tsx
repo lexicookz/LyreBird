@@ -23,7 +23,6 @@ import { useTabBarSpace } from '../components/BottomTabBar';
 
 import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FunnelStage, TypedAnalysis } from '../types';
-import { analysisProgress } from '../data/library';
 import { useFramePreview } from '../lib/framePreview';
 
 type StageFilter = 'all' | FunnelStage;

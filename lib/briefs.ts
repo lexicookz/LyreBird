@@ -59,3 +59,19 @@ export async function requestRegenerate(briefId: string): Promise<string> {
   );
   return res.brief_id;
 }
+
+/** One alternative opening for a brief, as the AI wrote it. */
+export type HookOption = { line: string; on_screen_text: string; visual: string };
+
+/**
+ * Ask the AI for 3 other hooks for a brief. Nothing is saved: the one the user
+ * picks goes into the brief as an ordinary edit.
+ */
+export async function requestAlternates(briefId: string): Promise<HookOption[]> {
+  const res = await postToWorker<{ hooks: HookOption[] }>(
+    `/briefs/${briefId}/alternates`,
+    undefined,
+    'write other hooks'
+  );
+  return res.hooks;
+}

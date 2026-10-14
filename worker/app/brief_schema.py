@@ -115,6 +115,17 @@ class Hook(_Output):
     visual: str = Field(description="What is on screen in the first seconds.")
 
 
+class HookAlternates(_Output):
+    """Other ways to open the same brief. Only the hook changes.
+
+    No min_length/max_length: Gemini rejects minItems/maxItems in a
+    response_schema just as it rejects exclusiveMinimum, so the count is
+    checked in the router instead.
+    """
+
+    hooks: list[Hook] = Field(description="Three alternative hooks, each a different approach.")
+
+
 class Beat(_Output):
     start_seconds: float = Field(ge=0)
     # ge rather than gt. Pydantic turns gt into exclusiveMinimum, which

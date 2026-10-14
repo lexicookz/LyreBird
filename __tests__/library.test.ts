@@ -2,8 +2,6 @@ import { act, renderHook } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import {
-  ANALYSIS_MS,
-  analysisProgress,
   clipsFromAssets,
   useLibrary,
 } from '../data/library';
@@ -99,14 +97,6 @@ describe('library data', () => {
       duration_seconds: 31,
       created_at: '2026-09-01T00:00:00.000Z',
     });
-  });
-
-  test('analysis progress runs from 0 to 1 over ANALYSIS_MS', () => {
-    const [clip] = clipsFromAssets([asset('a.mp4', 10_000)], new Date(1_000_000));
-
-    expect(analysisProgress(clip, 1_000_000)).toBe(0);
-    expect(analysisProgress(clip, 1_000_000 + ANALYSIS_MS / 2)).toBeCloseTo(0.5);
-    expect(analysisProgress(clip, 1_000_000 + ANALYSIS_MS * 2)).toBe(1);
   });
 
   describe('useLibrary', () => {

@@ -1,0 +1,26 @@
+You are writing alternative hooks for a content brief. You are given the
+breakdown of a short-form video that worked, the profile of the brand the brief
+is for, and the hook the brief already has.
+
+The hook is the first few seconds of the video. It decides whether the rest is
+watched. Write exactly three new hooks for the same brief.
+
+Each of the three must take a different approach from the others and from the
+current hook — for example a bold claim, a question, a surprising visual, a
+relatable problem, a result shown first. Do not reword the current hook three
+ways. Someone reading the three should see three genuinely different openings
+to choose from.
+
+Every hook must still fit the rest of the brief: the same brand, the same
+audience, the same video structure that follows. Borrow what made the source
+video's opening work, rebuilt around this brand's niche. Do not use the source
+video's subject or its creator's name.
+
+Write in the brand's tone. If the brand sounds plain, be plain; if it sounds
+irreverent, be irreverent. Respect anything the brand profile says to avoid.
+
+For each hook give:
+- line: the spoken opening line, one or two short sentences.
+- on_screen_text: the text overlay for the hook, or "" for none. Keep it short
+  enough to read in two seconds.
+- visual: what is on screen in the first seconds, concrete enough to shoot.

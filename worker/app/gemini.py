@@ -21,7 +21,7 @@ import json
 from pydantic import BaseModel
 
 from app.analysis import AnalysisResult
-from app.brief_schema import BrandProfile, BriefDraft
+from app.brief_schema import BrandProfile, BriefDraft, HookAlternates
 from app.config import settings
 from app.prompts import load, load_latest
 
@@ -30,6 +30,7 @@ from app.prompts import load, load_latest
 # are never edited -- see app/prompts.py for why that matters.
 PROMPT_NAME = "analyse"
 BRIEF_PROMPT_NAME = "brief"
+ALTERNATES_PROMPT_NAME = "hook_alternates"
 
 
 # Low but not zero: the taxonomy fields should be near-deterministic, while
@@ -462,4 +463,27 @@ def write_brief(
         "BRAND PROFILE:\n" + brand_profile.model_dump_json(indent=2),
     ]
     result = _call_model(contents, BriefDraft)
+    return result, version  # type: ignore[return-value]
+
+
+def write_hook_alternates(
+    analysis_payload: dict,
+    brand_profile: BrandProfile,
+    current_hook: str,
+) -> tuple[HookAlternates, str]:
+    """Three other hooks for a brief, in one call.
+
+    Same inputs as write_brief plus the hook the brief already has, so the
+    model is told what not to repeat. Nothing is written: the app shows the
+    options and the one the user picks is saved as an ordinary edit.
+    """
+    prompt, version = load_latest(ALTERNATES_PROMPT_NAME)
+
+    contents = [
+        prompt,
+        "SOURCE VIDEO BREAKDOWN:\n" + json.dumps(analysis_payload, indent=2, ensure_ascii=False),
+        "BRAND PROFILE:\n" + brand_profile.model_dump_json(indent=2),
+        "CURRENT HOOK:\n" + (current_hook or "(none)"),
+    ]
+    result = _call_model(contents, HookAlternates)
     return result, version  # type: ignore[return-value]
