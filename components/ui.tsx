@@ -10,7 +10,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 
 /** Full-width dark button ("Continue", "Finish setup"). */
 export function PrimaryButton({
@@ -147,6 +148,34 @@ export function BrandMark({
   );
 }
 
+/**
+ * A dismissible message pinned near the top of the screen, for things that
+ * went wrong in the background (a save that didn't reach Supabase, a failed
+ * upload). Render it last so it sits above the screen.
+ */
+export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  const styles = useStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={[styles.errorBanner, { top: insets.top + 8 }]}
+      accessibilityRole="alert"
+      accessibilityLiveRegion="assertive"
+    >
+      <Text style={styles.errorText}>{message}</Text>
+      <Pressable
+        onPress={onDismiss}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss message"
+        style={styles.errorClose}
+      >
+        <Text style={styles.errorCloseText}>×</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /** Segmented progress bar: `current` of `total` segments filled. */
 export function StepProgress({ current, total }: { current: number; total: number }) {
   const styles = useStyles(makeStyles);
@@ -163,6 +192,41 @@ export function StepProgress({ current, total }: { current: number; total: numbe
 }
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
+  errorBanner: {
+    position: 'absolute',
+    left: pagePadding,
+    right: pagePadding,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: radius.card,
+    backgroundColor: colors.pink,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 100,
+  },
+  errorText: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.onPastel,
+  },
+  errorClose: {
+    width: 20,
+    alignItems: 'center',
+  },
+  errorCloseText: {
+    fontFamily: fonts.body,
+    fontSize: 18,
+    lineHeight: 18,
+    color: colors.onPastelBody,
+  },
   pressed: {
     opacity: 0.85,
   },

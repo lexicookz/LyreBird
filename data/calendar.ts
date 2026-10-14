@@ -1,13 +1,10 @@
 // data/calendar.ts
 // The content calendar: which brief is planned to be posted on which day, and
-// how far along it is. Kept on the device for now.
+// how far along it is. Stored in Supabase (`calendar_entries`, via lib/calendar.ts).
 //
-// Differences from the `calendar_entries` table worth knowing before this moves
-// to Supabase:
-//   - `status` and `stage` live on the entry here. The table has neither; the
-//     closest thing is briefs.status, whose values don't include "filmed".
-//     Mapping, if it's kept on the brief: draft/edited -> draft,
-//     scheduled -> planned, published -> posted, and "filmed" needs adding.
+//   - `status` is a column on the entry (draft / planned / filmed / posted).
+//   - `stage` is NOT stored: it comes from the brief's analysis, through the
+//     resolver App.tsx passes to useCalendar.
 //   - One entry per brief. The table allows several (one per platform).
 //   - Dates only, no times: the team decided against posting times.
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -153,7 +150,9 @@ export function useCalendar(stageFor: (briefId: string) => FunnelStage = stageFo
           status: (e.status ?? 'draft') as CalendarStatus,
         }))
       );
-      setError(null);
+      // Don't clear `error` here: every action refreshes straight after a
+      // failure, and clearing it would hide that failure before it's shown.
+      // The user dismisses it (clearError).
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your calendar.');
     }
@@ -236,7 +235,10 @@ export function useCalendar(stageFor: (briefId: string) => FunnelStage = stageFo
     [refresh]
   );
 
-  return { items, loaded, error, refresh, schedule, move, setStatus, unschedule };
+  /** Dismiss the last error once the user has seen it. */
+  const clearError = useCallback(() => setError(null), []);
+
+  return { items, loaded, error, clearError, refresh, schedule, move, setStatus, unschedule };
 }
 
 export type Calendar = ReturnType<typeof useCalendar>;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, Share } from 'react-native';
 import LibraryScreen, { confirmDeleteClip } from './screens/LibraryScreen';
 import BriefsScreen from './screens/BriefsScreen';
@@ -22,6 +22,7 @@ import { Account, loadAccount, signIn, signOut, signUp } from './data/account';
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
 import AddVideoMenu from './components/AddVideoMenu';
+import { ErrorBanner } from './components/ui';
 import { useLibrary } from './data/library';
 import { suggestDate, useCalendar } from './data/calendar';
 import { briefAsText, briefFromAnalysis, useBriefs } from './data/briefs';
@@ -59,8 +60,24 @@ function AppContent() {
   const tabBarSpace = useTabBarSpace();
   const library = useLibrary();
   const videoImport = useVideoImport();
-  const calendar = useCalendar();
   const briefs = useBriefs();
+
+  /**
+   * A brief's funnel stage comes from the analysis of the clip it was written
+   * from. The calendar doesn't store a stage, so it asks this for each entry.
+   */
+  const stageForBriefId = useCallback(
+    (briefId: string): FunnelStage => {
+      const brief = briefs.briefs.find((b) => b.id === briefId);
+      const analysis =
+        library.analyses.find((a) => a.id === brief?.analysis_id) ??
+        library.analyses.find((a) => a.clip_id === brief?.clip_id) ??
+        mockAnalyses.find((a) => a.id === brief?.analysis_id);
+      return analysis?.payload.funnelStage ?? 'TOFU';
+    },
+    [briefs.briefs, library.analyses]
+  );
+  const calendar = useCalendar(stageForBriefId);
   /** The brief whose schedule sheet is open, if any. */
   const [schedulingBriefId, setSchedulingBriefId] = useState<string | null>(null);
 
@@ -81,16 +98,9 @@ function AppContent() {
     );
   }
 
-  /** A brief's funnel stage: from its analysis, else its calendar entry. */
+  /** A brief's funnel stage, from the analysis of its clip. */
   function stageOf(brief: Brief): FunnelStage {
-    const analysis =
-      library.analyses.find((a) => a.id === brief.analysis_id) ??
-      mockAnalyses.find((a) => a.id === brief.analysis_id);
-    return (
-      analysis?.payload.funnelStage ??
-      calendar.items.find((i) => i.briefId === brief.id)?.stage ??
-      'TOFU'
-    );
+    return stageForBriefId(brief.id);
   }
 
   const briefClipIds = new Set(briefs.briefs.map((b) => b.clip_id));
@@ -279,6 +289,9 @@ function AppContent() {
           onSchedule={() => setSchedulingBriefId(openBrief.id)}
         />
         {scheduleSheet}
+        {calendar.error && (
+          <ErrorBanner message={calendar.error} onDismiss={calendar.clearError} />
+        )}
       </>
     );
   }
@@ -412,6 +425,9 @@ function AppContent() {
         onClose={videoImport.closeSheet}
       />
       {scheduleSheet}
+      {calendar.error && (
+        <ErrorBanner message={calendar.error} onDismiss={calendar.clearError} />
+      )}
     </View>
   );
 }

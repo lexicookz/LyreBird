@@ -16,7 +16,7 @@ import {
   parseISODate,
   toISODate,
 } from '../data/calendar';
-import { fonts, FUNNEL_ORDER, radius, Colors, useStyles, useTheme } from '../theme';
+import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
 import type { FunnelStage } from '../types';
 
 function longDate(iso: string) {
@@ -72,11 +72,6 @@ export default function ScheduleSheet({
     setPickingDate(false);
     setPickerMonth(parseISODate(startDate));
   }, [visible]);
-
-  function cycleStage() {
-    const i = FUNNEL_ORDER.indexOf(stage);
-    setStage(FUNNEL_ORDER[(i + 1) % FUNNEL_ORDER.length]);
-  }
 
   function shiftPickerMonth(delta: number) {
     setPickerMonth(new Date(pickerMonth.getFullYear(), pickerMonth.getMonth() + delta, 1));
@@ -166,16 +161,16 @@ export default function ScheduleSheet({
 
         <View style={styles.field}>
           <Eyebrow>Stage</Eyebrow>
-          <Pressable
-            onPress={cycleStage}
+          {/* Read-only: the stage comes from the video's analysis, not the calendar. */}
+          <View
             style={[styles.stage, { backgroundColor: stages[stage].color }]}
-            accessibilityRole="button"
-            accessibilityLabel={`Stage, ${stages[stage].label}. Tap to change.`}
+            accessible
+            accessibilityLabel={`Stage, ${stages[stage].label}, set by the video's analysis`}
           >
             <View style={styles.stageDot} />
             <Text style={styles.stageText}>{stages[stage].label}</Text>
-            <Text style={styles.stageHint}>Tap to change</Text>
-          </Pressable>
+            <Text style={styles.stageHint}>From the analysis</Text>
+          </View>
         </View>
 
         <View style={styles.field}>

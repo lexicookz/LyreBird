@@ -518,6 +518,40 @@ describe('App', () => {
     );
   });
 
+  test('a calendar entry shows the funnel stage of its video, read-only in the sheet', async () => {
+    await signedIn();
+    withSampleCalendar();
+    await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
+    const { findByLabelText, findByText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Calendar'));
+    // Brief 3 was written from a Convert (BOFU) video.
+    await fireEvent.press(await findByText('“Last chance before the price goes up”'));
+
+    expect(await findByText('Schedule brief')).toBeTruthy();
+    expect(getByLabelText("Stage, Convert, set by the video's analysis")).toBeTruthy();
+    expect(queryByText('Tap to change')).toBeNull();
+  });
+
+  test('a calendar save that fails shows a message that can be dismissed', async () => {
+    await signedIn();
+    withSampleCalendar();
+    await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
+    require('../lib/calendar').scheduleBrief.mockRejectedValueOnce(
+      new Error('Could not schedule that brief: the database said no')
+    );
+    const { findByLabelText, findByText, getByText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Calendar'));
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Save schedule'));
+
+    expect(await findByText('Could not schedule that brief: the database said no')).toBeTruthy();
+    await fireEvent.press(getByLabelText('Dismiss message'));
+    expect(queryByText('Could not schedule that brief: the database said no')).toBeNull();
+    expect(getByText('Calendar')).toBeTruthy();
+  });
+
   test('"See brief" on a calendar entry opens the brief', async () => {
     await signedIn();
     withSampleCalendar();
