@@ -9,7 +9,7 @@
 // library themselves.
 
 import type { ImagePickerAsset } from 'expo-image-picker';
-
+import { File } from 'expo-file-system';
 import { supabase } from './supabase';
 import type { Analysis, Clip } from '../types';
 
@@ -154,10 +154,20 @@ export async function uploadClip(userId: string, asset: ImagePickerAsset): Promi
   const extension = extensionFor(asset.uri, asset.mimeType);
   const contentType = asset.mimeType ?? `video/${extension === 'mov' ? 'quicktime' : 'mp4'}`;
 
-  // fetch() handles the file:// and ph:// URIs the picker returns, which is
-  // why this does not go through expo-file-system -- its API moved in SDK 54
-  // and this sidesteps the split.
-  const body = await fetch(asset.uri).then((response) => response.arrayBuffer());
+  // Read the selected file through Expo's native filesystem API.
+  // This handles Android content:// URIs correctly.
+  const sourceFile = new File(asset.uri);
+  const body = await sourceFile.arrayBuffer();
+
+  if (body.byteLength === 0) {
+    throw new Error('Upload failed: the selected video could not be read.');
+  }
+
+  if (asset.fileSize != null && body.byteLength !== asset.fileSize) {
+    throw new Error(
+      `Upload failed: expected ${asset.fileSize} bytes but read ${body.byteLength}.`
+    );
+  }
 
   // Timestamp-prefixed so two uploads of "IMG_0042.mov" do not collide. Still
   // inside the user's own folder, which is what the policy checks.
