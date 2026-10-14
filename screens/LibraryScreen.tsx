@@ -232,13 +232,11 @@ function EmptyLibrary({
   brandColor,
   onOpenBrandProfile,
   onAddVideos,
-  onLoadSamples,
 }: {
   brandName?: string;
   brandColor?: string;
   onOpenBrandProfile: () => void;
   onAddVideos: () => void;
-  onLoadSamples: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
@@ -277,9 +275,6 @@ function EmptyLibrary({
       </View>
       <View style={styles.emptyActions}>
         <PrimaryButton label="Add your first videos" onPress={onAddVideos} style={styles.ctaShadow} />
-        <Pressable onPress={onLoadSamples} hitSlop={8} accessibilityRole="button">
-          <Text style={styles.sampleLink}>Just looking? Explore with sample videos</Text>
-        </Pressable>
       </View>
     </ScrollView>
   );
@@ -322,7 +317,6 @@ export default function LibraryScreen({
   onSelectVideo,
   onOpenBrandProfile,
   onAddVideos,
-  onLoadSamples,
   onRetry,
   onDelete,
   tags,
@@ -365,7 +359,6 @@ export default function LibraryScreen({
   onSelectVideo: (clip: Clip) => void;
   onOpenBrandProfile: () => void;
   onAddVideos: () => void;
-  onLoadSamples: () => void;
   onRetry: (clipId: string) => void;
   onDelete: (clipId: string) => void;
 }) {
@@ -428,7 +421,6 @@ export default function LibraryScreen({
           brandColor={brandColor}
           onOpenBrandProfile={onOpenBrandProfile}
           onAddVideos={onAddVideos}
-          onLoadSamples={onLoadSamples}
         />
       </SafeAreaView>
     );
@@ -1019,12 +1011,6 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 7,
     elevation: 6,
-  },
-  sampleLink: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 12.5,
-    color: colors.textLabel,
-    textAlign: 'center',
   },
 });
 

@@ -2,7 +2,7 @@
 // Figma: "Content analysis" ("Why this one works", 18:1102). Shows a clip's
 // analysis and leads to "Adapt for my brand".
 import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton, Eyebrow } from '../components/ui';
 import { useFramePreview } from '../lib/framePreview';
@@ -37,6 +37,7 @@ export default function VideoDetailScreen({
   hasBrief,
   onBack,
   onAdapt,
+  adapting = false,
   onDelete,
 }: {
   video: Clip;
@@ -45,6 +46,8 @@ export default function VideoDetailScreen({
   hasBrief: boolean;
   onBack: () => void;
   onAdapt: () => void;
+  /** The AI is writing this clip's brief right now. */
+  adapting?: boolean;
   /** Asks for confirmation itself, then deletes. */
   onDelete: () => void;
 }) {
@@ -209,12 +212,26 @@ export default function VideoDetailScreen({
         <View style={styles.footer}>
           <Pressable
             onPress={onAdapt}
+            disabled={adapting}
             accessibilityRole="button"
-            style={({ pressed }) => [styles.adapt, pressed && { opacity: 0.9 }]}
+            accessibilityState={{ busy: adapting, disabled: adapting }}
+            style={({ pressed }) => [styles.adapt, (pressed || adapting) && { opacity: 0.85 }]}
           >
-            <Text style={styles.adaptText}>{hasBrief ? 'Open my brief' : 'Adapt for my brand'}</Text>
-            <View style={styles.adaptChevron} />
+            {adapting ? (
+              <>
+                <ActivityIndicator color={colors.cream} />
+                <Text style={styles.adaptText}>Writing your brief…</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.adaptText}>{hasBrief ? 'Open my brief' : 'Adapt for my brand'}</Text>
+                <View style={styles.adaptChevron} />
+              </>
+            )}
           </Pressable>
+          {adapting && (
+            <Text style={styles.adaptNote}>The AI is writing it for your brand. This takes about half a minute.</Text>
+          )}
         </View>
       )}
     </SafeAreaView>
@@ -413,6 +430,13 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
+  },
+  adaptNote: {
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.textFaint,
+    textAlign: 'center',
+    marginTop: 8,
   },
   adaptText: {
     fontFamily: fonts.heading,

@@ -23,7 +23,7 @@ import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../them
 import type { Brief, Clip } from '../types';
 
 function comingSoon() {
-  Alert.alert('Coming soon', 'Rewriting the hook needs the AI, which isn’t connected yet.');
+  Alert.alert('Coming soon', 'Alternate hooks aren’t available yet. Try Regenerate for a whole new version.');
 }
 
 function formatTime(iso: string) {
@@ -45,6 +45,8 @@ export default function BriefScreen({
   onEdit,
   onBack,
   onSchedule,
+  onRegenerate,
+  regenerating = false,
 }: {
   brief: Brief;
   clip?: Clip;
@@ -54,6 +56,10 @@ export default function BriefScreen({
   onEdit: (patch: BriefEdit) => void;
   onBack: () => void;
   onSchedule: () => void;
+  /** Ask the AI for a fresh version. The current one is kept. */
+  onRegenerate: () => void;
+  /** The AI is rewriting this brief right now. */
+  regenerating?: boolean;
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
@@ -102,8 +108,14 @@ export default function BriefScreen({
               style={styles.hookInput}
             />
             <View style={styles.pillRow}>
-              <Pressable onPress={comingSoon} style={styles.framePill} accessibilityRole="button">
-                <Text style={styles.framePillText}>Regenerate</Text>
+              <Pressable
+                onPress={onRegenerate}
+                disabled={regenerating}
+                style={[styles.framePill, regenerating && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityState={{ busy: regenerating, disabled: regenerating }}
+              >
+                <Text style={styles.framePillText}>{regenerating ? 'Rewriting…' : 'Regenerate'}</Text>
               </Pressable>
               <Pressable onPress={comingSoon} style={styles.framePill} accessibilityRole="button">
                 <Text style={styles.framePillText}>3 alternates</Text>

@@ -18,7 +18,6 @@ async function renderLibrary(overrides: Partial<React.ComponentProps<typeof Libr
     onSelectVideo: jest.fn(),
     onOpenBrandProfile: jest.fn(),
     onAddVideos: jest.fn(),
-    onLoadSamples: jest.fn(),
     onRetry: jest.fn(),
     onDelete: jest.fn(),
     tags: [],
@@ -51,14 +50,12 @@ describe('LibraryScreen', () => {
 
   test('shows the empty state when nothing is saved', async () => {
     const onAddVideos = jest.fn();
-    const onLoadSamples = jest.fn();
-    const screen = await renderLibrary({ clips: [], analyses: [], onAddVideos, onLoadSamples });
+    const screen = await renderLibrary({ clips: [], analyses: [], onAddVideos });
 
     expect(screen.getByText('Nothing saved yet')).toBeTruthy();
     await fireEvent.press(screen.getByText('Add your first videos'));
     expect(onAddVideos).toHaveBeenCalled();
-    await fireEvent.press(screen.getByText('Just looking? Explore with sample videos'));
-    expect(onLoadSamples).toHaveBeenCalled();
+    expect(screen.queryByText('Just looking? Explore with sample videos')).toBeNull();
   });
 
   test('headline counts saved clips and clips without a brief', async () => {

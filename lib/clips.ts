@@ -11,6 +11,7 @@
 import type { ImagePickerAsset } from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { supabase } from './supabase';
+import { WORKER_URL } from './worker';
 import type { Analysis, Clip } from '../types';
 
 export const CLIPS_BUCKET = 'clips';
@@ -19,10 +20,6 @@ export const THUMBNAILS_BUCKET = 'thumbnails';
 
 
 
-/** Where the worker lives. Same variable the analysis call already uses. */
-const WORKER_URL = (
-  process.env.EXPO_PUBLIC_WORKER_URL ?? 'http://localhost:8000'
-).replace(/\/+$/, '');
 
 /** How many clips a page of the library holds. */
 export const LIBRARY_PAGE_SIZE = 24;
