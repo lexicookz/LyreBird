@@ -36,6 +36,19 @@ async function renderLibrary(overrides: Partial<React.ComponentProps<typeof Libr
 }
 
 describe('LibraryScreen', () => {
+  test('a clip with a thumbnail shows it inside its card', async () => {
+    const sample = sampleLibrary(new Date(NOW));
+    const clips = sample.clips.map((c, i) =>
+      i === 0 ? { ...c, thumbnail_url: 'https://example.test/thumb.jpg' } : { ...c, thumbnail_url: null }
+    );
+    const { getByTestId, queryByTestId } = await renderLibrary({ clips });
+
+    expect(getByTestId(`thumbnail-${clips[0].id}`).props.source).toEqual({
+      uri: 'https://example.test/thumb.jpg',
+    });
+    expect(queryByTestId(`thumbnail-${clips[1].id}`)).toBeNull();
+  });
+
   test('shows the empty state when nothing is saved', async () => {
     const onAddVideos = jest.fn();
     const onLoadSamples = jest.fn();

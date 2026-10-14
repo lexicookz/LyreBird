@@ -425,9 +425,12 @@ function AppContent() {
         onClose={videoImport.closeSheet}
       />
       {scheduleSheet}
-      {calendar.error && (
+      {/* One message at a time: a failed upload matters more than a calendar hiccup. */}
+      {library.error ? (
+        <ErrorBanner message={library.error} onDismiss={library.clearError} />
+      ) : calendar.error ? (
         <ErrorBanner message={calendar.error} onDismiss={calendar.clearError} />
-      )}
+      ) : null}
     </View>
   );
 }

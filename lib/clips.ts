@@ -14,6 +14,8 @@ import { supabase } from './supabase';
 import type { Analysis, Clip } from '../types';
 
 export const CLIPS_BUCKET = 'clips';
+/** Where /prepare puts each clip's thumbnail. Private, like the clips. */
+export const THUMBNAILS_BUCKET = 'thumbnails';
 
 
 
@@ -118,11 +120,63 @@ export async function fetchLibrary(query: LibraryQuery = {}): Promise<LibraryPag
   if (analyses.error) throw new Error(`Could not load analyses: ${analyses.error.message}`);
 
   return {
-    clips,
+    clips: await withThumbnailUrls(clips),
     analyses: analyses.data ?? [],
     hasMore: from + clips.length < total,
     total,
   };
+}
+
+/** How long a thumbnail link works. The library refreshes well within this. */
+const THUMBNAIL_URL_SECONDS = 60 * 60;
+
+/**
+ * Fill each clip's `thumbnail_url` with a signed link to its `thumbnail_path`.
+ *
+ * /prepare writes thumbnails to the private `thumbnails` bucket, so they can't
+ * be shown by path; each needs a short-lived signed URL. One request signs the
+ * whole page. The URL is only set on the copy in memory, never written back:
+ * it expires, and the path is the durable thing.
+ *
+ * A thumbnail is decoration, so if signing fails the clips come back without
+ * one and the card shows its plain colour block -- the library still loads.
+ */
+async function withThumbnailUrls<T extends { thumbnail_path: string | null; thumbnail_url: string | null }>(
+  clips: T[]
+): Promise<T[]> {
+  const paths = clips.map((c) => c.thumbnail_path).filter((p): p is string => !!p);
+  if (paths.length === 0) return clips;
+
+  const { data, error } = await supabase.storage
+    .from(THUMBNAILS_BUCKET)
+    .createSignedUrls(paths, THUMBNAIL_URL_SECONDS);
+  if (error || !data) return clips;
+
+  const urlByPath = new Map(
+    data.filter((d) => d.signedUrl && d.path).map((d) => [d.path as string, d.signedUrl])
+  );
+  return clips.map((c) =>
+    c.thumbnail_path && urlByPath.has(c.thumbnail_path)
+      ? { ...c, thumbnail_url: urlByPath.get(c.thumbnail_path)! }
+      : c
+  );
+}
+
+/** How long a link to a clip's video works -- long enough to watch and scrub it. */
+const VIDEO_URL_SECONDS = 60 * 60;
+
+/**
+ * A short-lived link to a clip's video file in the private `clips` bucket,
+ * for playing it or grabbing a frame. Null if the file can't be signed
+ * (deleted, or the clip has no upload yet).
+ */
+export async function signedVideoUrl(storagePath: string): Promise<string | null> {
+  if (!storagePath || storagePath.startsWith('local/')) return null;
+  const { data, error } = await supabase.storage
+    .from(CLIPS_BUCKET)
+    .createSignedUrl(storagePath, VIDEO_URL_SECONDS);
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
 }
 
 /** Every tag in use, for the filter row. */

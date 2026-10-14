@@ -23,6 +23,7 @@ import { useTabBarSpace } from '../components/BottomTabBar';
 import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FunnelStage, TypedAnalysis } from '../types';
 import { analysisProgress } from '../data/library';
+import { useFramePreview } from '../lib/framePreview';
 
 type StageFilter = 'all' | FunnelStage;
 type SortKey = 'focus' | 'newest' | 'oldest';
@@ -130,6 +131,9 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
   const { colors, stages } = useTheme();
   const styles = useStyles(makeStyles);
   const duration = formatDuration(clip.duration_seconds);
+  // No thumbnail from /prepare yet: show a frame from the video instead.
+  const frame = useFramePreview(clip, !clip.thumbnail_url && clip.status === 'ready');
+  const preview = clip.thumbnail_url ?? frame;
 
   if (clip.status === 'processing') {
     return (
@@ -185,6 +189,15 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
       accessibilityRole="button"
     >
       <View style={[styles.block, { height: blockHeight }]}>
+        {preview && (
+          <Image
+            source={{ uri: preview }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+            accessibilityIgnoresInvertColors
+            testID={`thumbnail-${clip.id}`}
+          />
+        )}
         <PlayButton />
         {duration && (
           <View style={styles.duration}>
@@ -779,6 +792,14 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     borderRadius: radius.card,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  thumbnail: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   play: {
     width: 36,

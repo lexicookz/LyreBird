@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton, Eyebrow } from '../components/ui';
+import { useFramePreview } from '../lib/framePreview';
 import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FormatTag, TypedAnalysis, VideoFormat } from '../types';
 
@@ -49,6 +50,8 @@ export default function VideoDetailScreen({
 }) {
   const { colors, stages } = useTheme();
   const styles = useStyles(makeStyles);
+  const frame = useFramePreview(video, !video.thumbnail_url);
+  const preview = video.thumbnail_url ?? frame;
   const [showAllBeats, setShowAllBeats] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
 
@@ -78,8 +81,8 @@ export default function VideoDetailScreen({
         </View>
 
         <View style={styles.heading}>
-          {video.thumbnail_url ? (
-            <Image source={{ uri: video.thumbnail_url }} style={styles.thumb} />
+          {preview ? (
+            <Image source={{ uri: preview }} style={styles.thumb} />
           ) : (
             <View style={styles.thumb} />
           )}

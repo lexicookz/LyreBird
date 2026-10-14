@@ -446,6 +446,24 @@ describe('App', () => {
     expect(await findByText('Analysing 2 new clips')).toBeTruthy();
   });
 
+  test('a failed upload says why on screen', async () => {
+    await signedIn();
+    const upload = require('../lib/clips').uploadClip as jest.Mock;
+    upload.mockRejectedValueOnce(new Error('Upload failed: new row violates row-level security policy'));
+    const { findByLabelText, findByText, getByText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Add videos'));
+    await fireEvent.press(await findByText('Camera roll'));
+    const cont = queryByText('Continue');
+    if (cont) await fireEvent.press(cont);
+    await fireEvent.press(await findByText('Import'));
+
+    expect(await findByText('Upload failed: new row violates row-level security policy')).toBeTruthy();
+    await fireEvent.press(getByLabelText('Dismiss message'));
+    expect(queryByText('Upload failed: new row violates row-level security policy')).toBeNull();
+    expect(getByText('Library')).toBeTruthy();
+  });
+
   test('a video can be deleted from its analysis screen', async () => {
     await signedIn();
     await withOneAnalysedClip();

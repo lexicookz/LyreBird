@@ -436,6 +436,8 @@ export function useLibrary() {
     loadSamples,
     retryAnalysis,
     removeClip,
+    /** Dismiss the last error once the user has seen it. */
+    clearError: () => setError(null),
   };
 }
 
