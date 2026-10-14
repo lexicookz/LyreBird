@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackButton, Eyebrow } from '../components/ui';
 import { useFramePreview } from '../lib/framePreview';
+import VideoPlayerModal from '../components/VideoPlayerModal';
 import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FormatTag, TypedAnalysis, VideoFormat } from '../types';
 
@@ -56,6 +57,7 @@ export default function VideoDetailScreen({
   const frame = useFramePreview(video, !video.thumbnail_url);
   const preview = video.thumbnail_url ?? frame;
   const [showAllBeats, setShowAllBeats] = useState(false);
+  const [watching, setWatching] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   const payload = video.status === 'ready' ? analysis?.payload : undefined;
@@ -84,11 +86,17 @@ export default function VideoDetailScreen({
         </View>
 
         <View style={styles.heading}>
-          {preview ? (
-            <Image source={{ uri: preview }} style={styles.thumb} />
-          ) : (
-            <View style={styles.thumb} />
-          )}
+          <Pressable
+            onPress={() => setWatching(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Watch the video"
+            style={({ pressed }) => [styles.thumb, pressed && { opacity: 0.85 }]}
+          >
+            {preview && <Image source={{ uri: preview }} style={styles.thumbImage} />}
+            <View style={styles.thumbPlay}>
+              <View style={styles.thumbPlayTriangle} />
+            </View>
+          </Pressable>
           <View style={{ flex: 1, gap: 6 }}>
             <Text style={styles.title}>Why this one works</Text>
             <Text style={styles.meta} numberOfLines={2}>{meta}</Text>
@@ -234,6 +242,12 @@ export default function VideoDetailScreen({
           )}
         </View>
       )}
+      <VideoPlayerModal
+        visible={watching}
+        storagePath={video.storage_path}
+        title={video.title}
+        onClose={() => setWatching(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -283,6 +297,35 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     height: 90,
     borderRadius: radius.card,
     backgroundColor: colors.thumb,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  thumbPlay: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 2,
+  },
+  thumbPlayTriangle: {
+    width: 0,
+    height: 0,
+    borderTopWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftWidth: 8,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: colors.onPastel,
   },
   title: {
     fontFamily: fonts.display,

@@ -12,6 +12,7 @@ import {
   type ImageSourcePropType,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScalePressable } from '../components/motion';
 import MonthGrid, { DayMark } from '../components/MonthGrid';
 import { BrandMark, Eyebrow } from '../components/ui';
 import {
@@ -80,7 +81,7 @@ function EntryCard({
   const { stages } = useTheme();
   const styles = useStyles(makeStyles);
   return (
-    <Pressable
+    <ScalePressable
       onPress={onPress}
       accessibilityRole="button"
       style={[styles.entry, { backgroundColor: stages[item.stage].color }]}
@@ -99,7 +100,7 @@ function EntryCard({
       </View>
       <Text style={styles.entryHook}>“{brief.hook}”</Text>
       <Text style={styles.entryMeta}>{briefMeta(brief, clip)}</Text>
-    </Pressable>
+    </ScalePressable>
   );
 }
 

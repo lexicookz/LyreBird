@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import BottomSheet from './BottomSheet';
+import { Appear } from './motion';
 import { PrimaryButton } from './ui';
 import { MAX_CLIP_SECONDS, MAX_UPLOAD_BYTES } from '../data/library';
 import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
@@ -166,7 +167,7 @@ export function ImportBar({
 }) {
   const styles = useStyles(makeStyles);
   return (
-    <View style={[styles.bar, { bottom }]}>
+    <Appear from="bottom" style={[styles.bar, { bottom }]}>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={styles.barTitle}>
           {count} video{count === 1 ? '' : 's'} selected
@@ -190,7 +191,7 @@ export function ImportBar({
       >
         <Text style={styles.barButtonText}>Import</Text>
       </Pressable>
-    </View>
+    </Appear>
   );
 }
 

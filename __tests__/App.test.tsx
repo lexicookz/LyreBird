@@ -220,6 +220,7 @@ jest.mock('../lib/clips', () => {
   let n = 0;
   return {
     CLIPS_BUCKET: 'clips',
+    signedVideoUrl: jest.fn(async (path: string) => `https://signed/${path}`),
     __rows: rows,
     LIBRARY_PAGE_SIZE: 24,
     // Filtering, sorting and paging happen in Postgres now, so the mock
@@ -503,7 +504,8 @@ describe('App', () => {
 
     await fireEvent.press(await findByLabelText('Add videos'));
     expect(await findByText('Add a video')).toBeTruthy();
-    expect(getByText('Videos should be 90 seconds or less in length')).toBeTruthy();
+    expect(getByText('Camera roll videos should be 90 seconds or less. Recordings can be longer.')).toBeTruthy();
+    expect(getByText('Screen recording')).toBeTruthy();
 
     // The × closes it again.
     await fireEvent.press(await findByLabelText('Close add a video'));
@@ -548,6 +550,20 @@ describe('App', () => {
     await fireEvent.press(getByLabelText('Dismiss message'));
     expect(queryByText('Upload failed: new row violates row-level security policy')).toBeNull();
     expect(getByText('Library')).toBeTruthy();
+  });
+
+  test('the video can be watched from its analysis screen', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const { findByText, findByLabelText, findByTestId, getByLabelText, queryByTestId } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByLabelText('Watch the video'));
+
+    const player = await findByTestId('video-player');
+    expect(player.props.player.play).toHaveBeenCalled();
+    await fireEvent.press(getByLabelText('Close video'));
+    expect(queryByTestId('video-player')).toBeNull();
   });
 
   test('a video can be deleted from its analysis screen', async () => {
@@ -761,6 +777,36 @@ describe('App', () => {
 
     expect(await findByText('VIDEOS · 1')).toBeTruthy();
     expect(getByText('BRIEFS · 1')).toBeTruthy();
+    // Videos come from the database's full-text search, not a filter on the phone.
+    expect(require('../lib/clips').fetchLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({ search: 'snooze' })
+    );
+  });
+
+  test('a video found by search opens even if it is not on the loaded library page', async () => {
+    await signedIn();
+    const sample = sampleLibrary();
+    const id = 'cccccccc-0000-4000-8000-000000000001';
+    const clip = sample.clips.find((c) => c.id === id)!;
+    const analysis = sample.analyses.find((a) => a.clip_id === id)!;
+    // The library page is empty; only the search query returns the clip.
+    const clipsApi = require('../lib/clips');
+    const original = clipsApi.fetchLibrary.getMockImplementation();
+    clipsApi.fetchLibrary.mockImplementation(async (q: any = {}) =>
+      q.search
+        ? { clips: [clip], analyses: [analysis], hasMore: false, total: 1 }
+        : { clips: [], analyses: [], hasMore: false, total: 0 }
+    );
+    const { findByLabelText, getByLabelText, findByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Search'));
+    await fireEvent.changeText(getByLabelText('Search videos and briefs'), 'snooze');
+    try {
+      await fireEvent.press(await findByText(SNOOZE_HOOK));
+      expect(await findByText('Why this one works')).toBeTruthy();
+    } finally {
+      clipsApi.fetchLibrary.mockImplementation(original);
+    }
   });
 
   test('brand changes made from Settings are saved', async () => {

@@ -201,12 +201,14 @@ function extensionFor(uri: string, mimeType?: string | null): string {
  * else is rejected on write and would be unreadable by its own owner even if
  * it landed.
  */
-export async function uploadClip(userId: string, asset: ImagePickerAsset): Promise<Clip> {
-  const extension = extensionFor(asset.uri, asset.mimeType);
-  const contentType = asset.mimeType ?? `video/${extension === 'mov' ? 'quicktime' : 'mp4'}`;
-
-  // Read the selected file through Expo's native filesystem API.
-  // This handles Android content:// URIs correctly.
+/**
+ * Read a picked video into memory for upload.
+ *
+ * Through Expo's native filesystem API rather than fetch(uri), because that
+ * handles Android content:// URIs (the bug fixed in #52). Shared by clip and
+ * screen-recording uploads.
+ */
+export async function readAssetBytes(asset: ImagePickerAsset): Promise<ArrayBuffer> {
   const sourceFile = new File(asset.uri);
   const body = await sourceFile.arrayBuffer();
 
@@ -219,6 +221,14 @@ export async function uploadClip(userId: string, asset: ImagePickerAsset): Promi
       `Upload failed: expected ${asset.fileSize} bytes but read ${body.byteLength}.`
     );
   }
+  return body;
+}
+
+export async function uploadClip(userId: string, asset: ImagePickerAsset): Promise<Clip> {
+  const extension = extensionFor(asset.uri, asset.mimeType);
+  const contentType = asset.mimeType ?? `video/${extension === 'mov' ? 'quicktime' : 'mp4'}`;
+
+  const body = await readAssetBytes(asset);
 
   // Timestamp-prefixed so two uploads of "IMG_0042.mov" do not collide. Still
   // inside the user's own folder, which is what the policy checks.

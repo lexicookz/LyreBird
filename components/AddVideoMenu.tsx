@@ -1,9 +1,10 @@
 // components/AddVideoMenu.tsx
 // What the "+" opens (Figma: "Menu nav", 18:647): a dark card above the tab bar
-// listing the ways to add a video. Only the camera roll exists today; screen
-// recordings and links can be added here as more rows.
+// listing the ways to add a video: from the camera roll, or one screen
+// recording of a scroll that the worker splits into clips.
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ScalePressable } from './motion';
 import { MAX_CLIP_SECONDS } from '../data/library';
 import { Ionicons } from '@expo/vector-icons';
 import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
@@ -12,11 +13,14 @@ import { ImagePickerAsset } from 'expo-image-picker';
 export default function AddVideoMenu({
   bottom,
   onCameraRoll,
+  onScreenRecording,
   onClose,
 }: {
   /** Distance from the screen's bottom edge to the top of the tab bar. */
   bottom: number;
   onCameraRoll: () => void;
+  /** One long recording of a scroll, split into clips by the worker. */
+  onScreenRecording: () => void;
   onClose: () => void;
 }) {
   const styles = useStyles(makeStyles);
@@ -32,7 +36,7 @@ export default function AddVideoMenu({
       />
       <View style={[styles.card, { bottom }]}>
         <Text style={styles.title}>Add a video</Text>
-        <Pressable
+        <ScalePressable
           onPress={onCameraRoll}
           accessibilityRole="button"
           style={({ pressed }) => [styles.option, pressed && { opacity: 0.8 }]}
@@ -47,9 +51,24 @@ export default function AddVideoMenu({
           <View style={styles.badge}>
             <Text style={styles.badgeText}>BEST</Text>
           </View>
-        </Pressable>
+        </ScalePressable>
+        <ScalePressable
+          onPress={onScreenRecording}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.option, pressed && { opacity: 0.8 }]}
+        >
+          <View style={[styles.optionIcon, { backgroundColor: colors.lilac }]}>
+            <Ionicons name="phone-portrait-outline" size={17} color={colors.onPastel} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.optionTitle}>Screen recording</Text>
+            <Text style={styles.optionSub}>One long scroll, split into separate videos</Text>
+          </View>
+        </ScalePressable>
         <View style={styles.divider} />
-        <Text style={styles.note}>Videos should be {MAX_CLIP_SECONDS} seconds or less in length</Text>
+        <Text style={styles.note}>
+          Camera roll videos should be {MAX_CLIP_SECONDS} seconds or less. Recordings can be longer.
+        </Text>
       </View>
     </>
   );

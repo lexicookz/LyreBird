@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, StyleSheet, Share } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Share } from 'react-native';
 import LibraryScreen, { confirmDeleteClip } from './screens/LibraryScreen';
 import BriefsScreen from './screens/BriefsScreen';
 import VideoDetailScreen from './screens/VideoDetailScreen';
@@ -24,13 +24,18 @@ import { fetchMyBrand, saveBrand, setupFromBrand } from './lib/brands';
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
 import AddVideoMenu from './components/AddVideoMenu';
+import RecordingProgress from './components/RecordingProgress';
+import { Appear } from './components/motion';
+import { success, warning } from './lib/haptics';
+import { useRecordingImport } from './data/recordings';
 import { ErrorBanner } from './components/ui';
 import { useLibrary } from './data/library';
 import { suggestDate, useCalendar } from './data/calendar';
 import { briefAsText, useBriefs } from './data/briefs';
 import ScheduleSheet from './components/ScheduleSheet';
 import { mockAnalyses, mockClips } from './data/mockVideos';
-import { Brief, Clip, FunnelStage } from './types';
+import { Brief, Clip, FunnelStage, TypedAnalysis } from './types';
+import { fetchLibrary } from './lib/clips';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { Colors, ThemeProvider, useStyles, useTheme } from './theme';
@@ -62,6 +67,8 @@ function AppContent() {
   const tabBarSpace = useTabBarSpace();
   const library = useLibrary();
   const videoImport = useVideoImport();
+  // Screen recordings: the split clips appear as soon as the worker has cut them.
+  const recordingImport = useRecordingImport({ onClipsReady: () => library.refresh(false) });
   const briefs = useBriefs();
 
   /**
@@ -82,6 +89,19 @@ function AppContent() {
   const calendar = useCalendar(stageForBriefId);
   /** The brief whose schedule sheet is open, if any. */
   const [schedulingBriefId, setSchedulingBriefId] = useState<string | null>(null);
+  /**
+   * Videos opened from Search results. Search asks the database, so a result
+   * may not be on the Library page that's loaded; keep it so its screen opens.
+   */
+  const [pickedClips, setPickedClips] = useState<{ clip: Clip; analysis?: TypedAnalysis }[]>([]);
+  const searchClips = useCallback(
+    (query: string) =>
+      fetchLibrary({ search: query, pageSize: 30 }).then((page) => ({
+        clips: page.clips,
+        analyses: page.analyses as TypedAnalysis[],
+      })),
+    []
+  );
   /** The user's brands row in Supabase, which the AI brief writer reads. */
   const [brandId, setBrandId] = useState<string | null>(null);
   /** A message about the brand that has nowhere else to go (failed save, no brand yet). */
@@ -133,7 +153,16 @@ function AppContent() {
 
   function clipFor(clipId: string): Clip | undefined {
     return (
-      library.clips.find((c) => c.id === clipId) ?? mockClips.find((c) => c.id === clipId)
+      library.clips.find((c) => c.id === clipId) ??
+      pickedClips.find((p) => p.clip.id === clipId)?.clip ??
+      mockClips.find((c) => c.id === clipId)
+    );
+  }
+
+  function analysisFor(clipId: string): TypedAnalysis | undefined {
+    return (
+      library.analyses.find((a) => a.clip_id === clipId) ??
+      pickedClips.find((p) => p.clip.id === clipId)?.analysis
     );
   }
 
@@ -185,6 +214,7 @@ function AppContent() {
   }
 
   function handleImport() {
+    success();
     library.importVideos(videoImport.pending);
     videoImport.clearPending();
     setActiveTab('library');
@@ -214,7 +244,10 @@ function AppContent() {
     const id = brandId ?? (await persistBrand(brandSetup));
     if (!id) return;
     const briefId = await briefs.generate(clip.id, id);
-    if (briefId) setPushed({ type: 'brief', briefId, backTo });
+    if (briefId) {
+      success();
+      setPushed({ type: 'brief', briefId, backTo });
+    }
   }
 
   /**
@@ -224,6 +257,7 @@ function AppContent() {
   async function handleRegenerate(brief: Brief) {
     const newId = await briefs.regenerate(brief.id);
     if (!newId) return;
+    success();
     const entry = calendar.items.find((i) => i.briefId === brief.id);
     if (entry) {
       await calendar.schedule({ briefId: newId, date: entry.date, status: entry.status });
@@ -244,34 +278,49 @@ function AppContent() {
   }
 
   if (stage === 'loading' || !library.loaded || !calendar.loaded || !briefs.loaded) {
-    return null;
+    // A calm screen in the app's colours, not a blank flash.
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.textFaint} accessibilityLabel="Loading" />
+      </View>
+    );
   }
 
   // ---------- signed out / first run ----------
 
   if (stage === 'opener') {
-    return <OpenerScreen onStart={() => setStage('signup')} onSkip={() => setStage('login')} />;
+    return (
+      <Appear key="opener" style={styles.fill}>
+        <OpenerScreen onStart={() => setStage('signup')} onSkip={() => setStage('login')} />
+      </Appear>
+    );
   }
 
   if (stage === 'signup' || stage === 'login') {
     return (
-      <AuthScreen
-        key={stage}
-        mode={stage}
-        savedCount={library.clips.length}
-        onSubmit={handleAuth}
-        onSwitchMode={() => setStage(stage === 'login' ? 'signup' : 'login')}
-      />
+      <Appear key={stage} style={styles.fill}>
+        <AuthScreen
+          mode={stage}
+          savedCount={library.clips.length}
+          onSubmit={handleAuth}
+          onSwitchMode={() => setStage(stage === 'login' ? 'signup' : 'login')}
+        />
+      </Appear>
     );
   }
 
   if (stage === 'brand') {
     return (
-      <BrandSetupScreen
-        initial={brandSetup}
-        onBack={() => setStage('opener')}
-        onDone={handleFinishOnboarding}
-      />
+      <Appear key="brand" from="right" style={styles.fill}>
+        <BrandSetupScreen
+          initial={brandSetup}
+          onBack={() => setStage('opener')}
+          onDone={(setup) => {
+            success();
+            handleFinishOnboarding(setup);
+          }}
+        />
+      </Appear>
     );
   }
 
@@ -299,7 +348,10 @@ function AppContent() {
       defaultStage={schedulingBrief ? stageOf(schedulingBrief) : 'TOFU'}
       suggestedDate={suggestDate(calendar.items)}
       onSave={(values) => {
-        if (schedulingBriefId) calendar.schedule({ briefId: schedulingBriefId, ...values });
+        if (schedulingBriefId) {
+          success();
+          calendar.schedule({ briefId: schedulingBriefId, ...values });
+        }
         setSchedulingBriefId(null);
       }}
       onRemove={() => {
@@ -328,23 +380,27 @@ function AppContent() {
       brandSetup.tones.length
     );
     return (
-      <SettingsScreen
-        brandName={brandSetup?.name}
-        brandColor={brandColor}
-        email={account?.email}
-        brandComplete={complete}
-        onOpenBrand={() => setPushed({ type: 'brandProfile', backTo: { type: 'settings' } })}
-        onExportBriefs={handleExportBriefs}
-        onSignOut={handleSignOut}
-        onBack={closePushed}
-      />
+      <Appear key="settings" from="right" style={styles.fill}>
+        <SettingsScreen
+          brandName={brandSetup?.name}
+          brandColor={brandColor}
+          email={account?.email}
+          brandComplete={complete}
+          onOpenBrand={() => setPushed({ type: 'brandProfile', backTo: { type: 'settings' } })}
+          onExportBriefs={handleExportBriefs}
+          onSignOut={handleSignOut}
+          onBack={closePushed}
+        />
+      </Appear>
     );
   }
 
   if (pushed?.type === 'brandProfile') {
     return (
       <>
-        <BrandProfileScreen setup={brandSetup} onSave={handleSaveBrand} onBack={closePushed} />
+        <Appear key="brandProfile" from="right" style={styles.fill}>
+          <BrandProfileScreen setup={brandSetup} onSave={handleSaveBrand} onBack={closePushed} />
+        </Appear>
         {banner}
       </>
     );
@@ -355,18 +411,19 @@ function AppContent() {
   if (openBrief) {
     return (
       <>
-        <BriefScreen
-          key={openBrief.id}
-          brief={openBrief}
-          clip={clipFor(openBrief.clip_id)}
-          brandName={brandSetup?.name}
-          entry={calendar.items.find((i) => i.briefId === openBrief.id)}
-          onEdit={(patch) => briefs.edit(openBrief.id, patch)}
-          onBack={closePushed}
-          onSchedule={() => setSchedulingBriefId(openBrief.id)}
-          onRegenerate={() => handleRegenerate(openBrief)}
-          regenerating={briefs.isWorking(openBrief.id)}
-        />
+        <Appear key={`brief-${openBrief.id}`} from="right" style={styles.fill}>
+          <BriefScreen
+            brief={openBrief}
+            clip={clipFor(openBrief.clip_id)}
+            brandName={brandSetup?.name}
+            entry={calendar.items.find((i) => i.briefId === openBrief.id)}
+            onEdit={(patch) => briefs.edit(openBrief.id, patch)}
+            onBack={closePushed}
+            onSchedule={() => setSchedulingBriefId(openBrief.id)}
+            onRegenerate={() => handleRegenerate(openBrief)}
+            regenerating={briefs.isWorking(openBrief.id)}
+          />
+        </Appear>
         {scheduleSheet}
         {banner}
       </>
@@ -377,20 +434,23 @@ function AppContent() {
   if (detailClip) {
     return (
       <>
-        <VideoDetailScreen
-          video={detailClip}
-          analysis={library.analyses.find((a) => a.clip_id === detailClip.id)}
-          hasBrief={briefClipIds.has(detailClip.id)}
-          onBack={closePushed}
-          onAdapt={() => handleAdapt(detailClip)}
-          adapting={briefs.isWorking(detailClip.id)}
-          onDelete={() =>
-            confirmDeleteClip(detailClip, () => {
-              library.removeClip(detailClip.id);
-              setPushed(null);
-            })
-          }
-        />
+        <Appear key={`detail-${detailClip.id}`} from="right" style={styles.fill}>
+          <VideoDetailScreen
+            video={detailClip}
+            analysis={analysisFor(detailClip.id)}
+            hasBrief={briefClipIds.has(detailClip.id)}
+            onBack={closePushed}
+            onAdapt={() => handleAdapt(detailClip)}
+            adapting={briefs.isWorking(detailClip.id)}
+            onDelete={() =>
+              confirmDeleteClip(detailClip, () => {
+                warning();
+                library.removeClip(detailClip.id);
+                setPushed(null);
+              })
+            }
+          />
+        </Appear>
         {banner}
       </>
     );
@@ -429,11 +489,13 @@ function AppContent() {
       case 'search':
         return (
           <SearchScreen
-            clips={library.clips}
-            analyses={library.analyses}
+            searchClips={searchClips}
             briefs={briefs.briefs}
             stageOf={stageOf}
-            onSelectClip={(clip) => setPushed({ type: 'detail', clipId: clip.id })}
+            onSelectClip={(clip, analysis) => {
+              setPickedClips((current) => [{ clip, analysis }, ...current.filter((p) => p.clip.id !== clip.id)]);
+              setPushed({ type: 'detail', clipId: clip.id });
+            }}
             onSelectBrief={(brief) => setPushed({ type: 'brief', briefId: brief.id })}
           />
         );
@@ -470,7 +532,9 @@ function AppContent() {
       {/* The bar floats over the bottom of the screen. The Library scrolls under it
           and pads itself; other tabs are kept clear of it here. */}
       <View style={[styles.content, activeTab !== 'library' && { paddingBottom: tabBarSpace }]}>
-        {renderTabContent()}
+        <Appear key={activeTab} duration={160} style={styles.fill}>
+          {renderTabContent()}
+        </Appear>
       </View>
       {addMenuOpen && (
         <AddVideoMenu
@@ -478,6 +542,11 @@ function AppContent() {
           onCameraRoll={() => {
             setAddMenuOpen(false);
             videoImport.start();
+          }}
+          onScreenRecording={() => {
+            setAddMenuOpen(false);
+            setActiveTab('library');
+            recordingImport.start();
           }}
           onClose={() => setAddMenuOpen(false)}
         />
@@ -504,6 +573,13 @@ function AppContent() {
         onContinue={videoImport.continueFromSheet}
         onClose={videoImport.closeSheet}
       />
+      <RecordingProgress
+        state={recordingImport.state}
+        // Above the "N videos selected" bar when both are showing.
+        bottom={tabBarSpace + 4 + (videoImport.pending.length > 0 ? 76 : 0)}
+        onRetry={recordingImport.retry}
+        onDismiss={recordingImport.dismiss}
+      />
       {scheduleSheet}
       {banner}
     </View>
@@ -511,6 +587,16 @@ function AppContent() {
 }
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
+  fill: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -526,6 +612,12 @@ function ThemedStatusBar() {
   return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
 }
 
+/** The page colour behind everything, so a screen fading in never shows white in dark mode. */
+function ThemedRoot({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
+  return <View style={{ flex: 1, backgroundColor: colors.bg }}>{children}</View>;
+}
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);
 
@@ -537,7 +629,9 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <ThemedStatusBar />
-      <AppContent />
+        <ThemedRoot>
+          <AppContent />
+        </ThemedRoot>
       </ThemeProvider>
     </SafeAreaProvider>
   );

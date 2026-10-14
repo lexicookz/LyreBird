@@ -16,7 +16,7 @@ import {
   type GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BackButton, BrandMark, Chip, Eyebrow } from '../components/ui';
+import { AddOwnInput, BackButton, BrandMark, Chip, Eyebrow, withTone } from '../components/ui';
 import { BRAND_COLORS, BrandSetup, TONES, brandColorOf, emptyBrandSetup } from '../data/brandSetup';
 import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 
@@ -165,18 +165,23 @@ export default function BrandProfileScreen({
                   onPress={() => update({ tones: draft.tones.filter((t) => t !== tone) })}
                 />
               ))}
-              {unusedTones.length > 0 && (
-                <Pressable
-                  onPress={() => setAddingTone(!addingTone)}
-                  style={styles.addChip}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: addingTone }}
-                >
-                  <Text style={styles.addChipText}>{addingTone ? 'Done' : '+ add'}</Text>
-                </Pressable>
-              )}
+              <Pressable
+                onPress={() => setAddingTone(!addingTone)}
+                style={styles.addChip}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: addingTone }}
+              >
+                <Text style={styles.addChipText}>{addingTone ? 'Done' : '+ add'}</Text>
+              </Pressable>
             </View>
             {addingTone && (
+              <AddOwnInput
+                placeholder="Your own tone, e.g. Sarcastic"
+                accessibilityLabel="Add your own tone"
+                onAdd={(text) => update({ tones: withTone(draft.tones, text) })}
+              />
+            )}
+            {addingTone && unusedTones.length > 0 && (
               <View style={styles.chips}>
                 {unusedTones.map((tone) => (
                   <Pressable

@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScalePressable } from '../components/motion';
 import BottomSheet from '../components/BottomSheet';
 import { BrandMark, PrimaryButton } from '../components/ui';
 import { useTabBarSpace } from '../components/BottomTabBar';
@@ -137,7 +138,7 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
 
   if (clip.status === 'processing') {
     return (
-      <Pressable
+      <ScalePressable
         style={[styles.card, styles.cardPlain]}
         onLongPress={onDelete}
         accessibilityLabel={`Analysing ${clip.title ?? 'video'}`}
@@ -149,14 +150,14 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
       
           </View>
         </View>
-      </Pressable>
+      </ScalePressable>
     );
   }
 
   if (!analysis) {
     // Failed, or marked ready with no analysis row.
     return (
-      <Pressable
+      <ScalePressable
         style={[styles.card, styles.cardPlain, { padding: 12, gap: 8 }]}
         onPress={onPress}
         onLongPress={onDelete}
@@ -175,13 +176,13 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
         >
           <Text style={styles.outlinePillText}>Try again</Text>
         </Pressable>
-      </Pressable>
+      </ScalePressable>
     );
   }
 
   const stage = stages[analysis.payload.funnelStage];
   return (
-    <Pressable
+    <ScalePressable
       style={[styles.card, { backgroundColor: stage?.color ?? colors.sky }]}
       onPress={onPress}
       onLongPress={onDelete}
@@ -221,7 +222,7 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
         </View>
         <Text style={styles.saved}>{savedAgo(clip.created_at, now)}</Text>
       </View>
-    </Pressable>
+    </ScalePressable>
   );
 }
 
