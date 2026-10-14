@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScalePressable } from '../components/motion';
 import * as ImagePicker from 'expo-image-picker';
 import { BackButton, BrandMark } from '../components/ui';
 import { fonts, pagePadding, radius, Appearance, Colors, useStyles, useTheme } from '../theme';
@@ -41,7 +42,7 @@ function Row({
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   return (
-    <Pressable
+    <ScalePressable
       onPress={onPress}
       accessibilityRole="button"
       style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && { opacity: 0.7 }]}
@@ -57,7 +58,7 @@ function Row({
         )
       ) : null}
       <Chevron />
-    </Pressable>
+    </ScalePressable>
   );
 }
 
@@ -98,7 +99,7 @@ export default function SettingsScreen({
   }, []);
 
   function confirmSignOut() {
-    Alert.alert('Sign out?', 'Your videos, briefs and brand stay on this phone for when you log back in.', [
+    Alert.alert('Sign out?', 'Your videos, briefs and brand stay saved in your account for when you log back in.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: onSignOut },
     ]);
@@ -110,14 +111,14 @@ export default function SettingsScreen({
         <BackButton onPress={onBack} />
         <Text style={styles.title}>Settings</Text>
 
-        <Pressable onPress={onOpenBrand} style={styles.account} accessibilityRole="button">
+        <ScalePressable onPress={onOpenBrand} style={styles.account} accessibilityRole="button">
           <BrandMark name={brandName} color={brandColor} size={42} shape="square" />
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={styles.accountName}>{brandName || 'Your brand'}</Text>
             {!!email && <Text style={styles.accountEmail}>{email}</Text>}
           </View>
           <Chevron />
-        </Pressable>
+        </ScalePressable>
 
         <Text style={styles.section}>CONTENT</Text>
         <View style={styles.group}>

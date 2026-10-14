@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScalePressable } from '../components/motion';
 import { BrandMark } from '../components/ui';
 import { CalendarItem, formatShortDate, parseISODate } from '../data/calendar';
 import { shotsOf } from '../data/briefs';
@@ -115,7 +116,7 @@ export default function BriefsScreen({
                     .filter(Boolean)
                     .join(' · ');
                   return (
-                    <Pressable
+                    <ScalePressable
                       key={brief.id}
                       onPress={() => onSelectBrief(brief)}
                       accessibilityRole="button"
@@ -136,7 +137,7 @@ export default function BriefsScreen({
                           <Text style={styles.pillText}>{entry ? 'Reschedule' : 'Schedule'}</Text>
                         </Pressable>
                       )}
-                    </Pressable>
+                    </ScalePressable>
                   );
                 })}
               </View>

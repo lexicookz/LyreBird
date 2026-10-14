@@ -6,9 +6,8 @@
 // `<user_id>/<filename>`. Only the Gemini call goes through the worker, which
 // is the one thing holding an API key.
 //
-// This replaced a local stand-in -- AsyncStorage for the rows and a simulated
-// analysis on a timer. The consequence worth knowing: the library is no longer
-// available offline, because it is no longer on the device.
+// The library is not available offline: it lives in the database, not on the
+// device.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ImagePickerAsset } from 'expo-image-picker';
@@ -25,7 +24,7 @@ import {
   type LibrarySort,
 } from '../lib/clips';
 import { mockAnalyses, mockClips } from './mockVideos';
-import type { AnalysisPayload, Clip, TypedAnalysis } from '../types';
+import type { Clip, TypedAnalysis } from '../types';
 
 export type LibraryState = {
   clips: Clip[];
@@ -36,47 +35,15 @@ export type LibraryState = {
 
 const EMPTY: LibraryState = { clips: [], analyses: [], lastImportCount: null };
 
-/** How long a simulated analysis takes. */
-
 /** Clips longer than this are skipped at import. */
 export const MAX_CLIP_SECONDS = 90;
-
-// Sample analyses handed out by the simulator, in order: three written for it
-// (one per funnel stage), then the three mock analyses. The new ones come first
-// so the sample library doesn't show the same hook twice.
-const SAMPLE_PAYLOADS: AnalysisPayload[] = [
-  {
-    hook: 'I wasted $4k on skincare so you don’t have to',
-    transcript: 'I wasted four thousand dollars on skincare so you don’t have to…',
-    onScreenText: ['$4,000 later'],
-    shotBeats: ['Handheld close-up, direct address', 'Cut to shelf of products', 'Three fast product holds', 'Back to face, spoken CTA'],
-    pacing: 'Fast cuts for the first 10 seconds, then slows for the CTA',
-    cta: 'Spoken, not shown',
-    format: 'talking_head',
-    funnelStage: 'TOFU',
-  },
-  {
-    hook: 'Three things I check before I buy',
-    transcript: 'Three things I check before I buy anything for my skin…',
-    onScreenText: ['1. Ingredients 2. Bottle 3. Refills'],
-    shotBeats: ['Product on bench', 'Close-up of label', 'Pour test', 'Verdict to camera'],
-    pacing: 'Even, one beat per point',
-    cta: 'Comment which one you check',
-    format: 'voiceover',
-    funnelStage: 'MOFU',
-  },
-  {
-    hook: 'Last day at this price',
-    transcript: 'This is the last day you can get it at this price…',
-    onScreenText: ['Ends tonight'],
-    shotBeats: ['Price card', 'Product in hand', 'Checkout screen'],
-    pacing: 'Quick, under 15 seconds',
-    cta: 'Link in bio, shown on screen',
-    format: 'text_overlay',
-    funnelStage: 'BOFU',
-  },
-  ...mockAnalyses.map((a) => a.payload),
-];
+/**
+ * The largest file Supabase Storage accepts on the free plan (its global
+ * per-file limit). Anything bigger fails with "The object exceeded the maximum
+ * allowed size", so the picker leaves it out up front with a clearer message.
+ * Change this if the project moves to a plan with a higher limit.
+ */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 // ---------- storage ----------
 //
@@ -96,10 +63,10 @@ async function loadLibrary(query: LibraryQuery = {}): Promise<LibraryState & { h
 
 // ---------- pure helpers (exported for tests) ----------
 
-/** The mock clips and analyses, for "explore with sample videos". */
+/** The mock clips and analyses as a library. Test data only; the app never shows it. */
 export function sampleLibrary(now = new Date()): LibraryState {
   return {
-    // Restart processing clips from now, so the sample shows analysis finishing.
+    // Processing clips start from now, so a test can treat them as fresh.
     clips: mockClips.map((c) =>
       c.status === 'processing' ? { ...c, updated_at: now.toISOString() } : c
     ),
@@ -149,38 +116,18 @@ export function clipsFromAssets(
     };
   });
 }
-type UploadVideoInput = {
-  uri: string;
-  fileName: string;
-};
-
-// The direct multipart upload to the worker lived here. It is gone: a clip is
-// in Supabase storage before anything analyses it, so the worker reads it by
-// id rather than being handed the file. See lib/clips.ts.
-
-export const ANALYSIS_MS = 6000;
-
-export function analysisProgress(
-  clip: Clip,
-  now = Date.now()
-) {
-  const started = Date.parse(clip.updated_at);
-
-  return Math.min(
-    1,
-    Math.max(
-      0,
-      (now - started) / ANALYSIS_MS
-    )
-  );
-}
-
 
 export function useLibrary() {
   const [state, setState] = useState<LibraryState>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "Saved today / yesterday / 3 days ago" on the cards. Ticks once a minute
+  // so the labels move on if the app is left open past midnight.
   const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   // What the database is being asked for. Changing this reloads from page 0,
   // because a filter that kept the old page's rows would be showing results
@@ -400,21 +347,6 @@ export function useLibrary() {
     [state.clips, refresh]
   );
 
-  /**
-   * "Explore with sample videos" -- writes the sample rows to the database
-   * rather than holding them locally, so there is one source of truth. The
-   * rows have no file behind them, which is the same as before.
-   */
-  const loadSamples = useCallback(async () => {
-    const userId = await currentUserId();
-    if (!userId) {
-      setError('Sign in to load samples.');
-      return;
-    }
-    const sample = sampleLibrary();
-    setState((s) => ({ ...sample, lastImportCount: s.lastImportCount }));
-  }, []);
-
   return {
     ...state,
     loaded,
@@ -433,9 +365,10 @@ export function useLibrary() {
     loadMore,
     refresh,
     importVideos,
-    loadSamples,
     retryAnalysis,
     removeClip,
+    /** Dismiss the last error once the user has seen it. */
+    clearError: () => setError(null),
   };
 }
 

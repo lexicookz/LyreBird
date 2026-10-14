@@ -1,9 +1,14 @@
 // screens/SearchScreen.tsx
 // The Search tab. There's no Figma frame for it, so it follows the Library and
 // Briefs styles: one box that searches both videos and briefs.
-import React, { useMemo, useState } from 'react';
+//
+// Videos are searched in Postgres (the same full-text search the Library
+// uses), so it finds words in transcripts the phone never downloaded. Briefs
+// are all loaded already, so they're filtered here.
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScalePressable } from '../components/motion';
 import { shotsOf } from '../data/briefs';
 import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Brief, Clip, FunnelStage, TypedAnalysis } from '../types';
@@ -12,38 +17,69 @@ function matches(q: string, texts: (string | null | undefined)[]) {
   return texts.some((t) => !!t && t.toLowerCase().includes(q));
 }
 
+/** How long to wait after typing stops before asking the database. */
+const SEARCH_AFTER_MS = 300;
+
 export default function SearchScreen({
-  clips,
-  analyses,
+  searchClips,
   briefs,
   stageOf,
   onSelectClip,
   onSelectBrief,
 }: {
-  clips: Clip[];
-  analyses: TypedAnalysis[];
+  /** Full-text search over the user's clips, in the database. */
+  searchClips: (query: string) => Promise<{ clips: Clip[]; analyses: TypedAnalysis[] }>;
   briefs: Brief[];
   stageOf: (brief: Brief) => FunnelStage;
-  onSelectClip: (clip: Clip) => void;
+  onSelectClip: (clip: Clip, analysis?: TypedAnalysis) => void;
   onSelectBrief: (brief: Brief) => void;
 }) {
   const { colors, stages } = useTheme();
   const styles = useStyles(makeStyles);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
+  const [found, setFound] = useState<{ q: string; clips: Clip[]; analyses: TypedAnalysis[] } | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  const analysisByClip = useMemo(() => new Map(analyses.map((a) => [a.clip_id, a])), [analyses]);
+  useEffect(() => {
+    if (!q) {
+      setFound(null);
+      setSearching(false);
+      return;
+    }
+    let active = true;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      searchClips(q)
+        .then((page) => {
+          if (!active) return;
+          setFound({ q, ...page });
+          setSearchError(null);
+        })
+        .catch((e) => {
+          if (active) setSearchError(e instanceof Error ? e.message : 'Could not search your videos.');
+        })
+        .finally(() => {
+          if (active) setSearching(false);
+        });
+    }, SEARCH_AFTER_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [q, searchClips]);
 
-  const clipResults = q
-    ? clips.filter((c) => {
-        const p = analysisByClip.get(c.id)?.payload;
-        return matches(q, [c.title, ...c.tags, p?.hook, ...(p?.onScreenText ?? []), p?.transcript, p?.cta]);
-      })
-    : [];
+  const analysisByClip = useMemo(
+    () => new Map((found?.analyses ?? []).map((a) => [a.clip_id, a])),
+    [found]
+  );
+  const clipResults = q && found?.q === q ? found.clips : [];
   const briefResults = q
     ? briefs.filter((b) => matches(q, [b.hook, b.caption, b.script, b.cta, ...b.hashtags, ...shotsOf(b)]))
     : [];
   const total = clipResults.length + briefResults.length;
+  const stillLooking = searching || (!!q && found?.q !== q && !searchError);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -78,8 +114,12 @@ export default function SearchScreen({
             Searches the hooks, on-screen text and transcripts of your videos, and the hooks,
             shots, scripts and captions of your briefs.
           </Text>
+        ) : total === 0 && stillLooking ? (
+          <Text style={styles.hint}>Searching…</Text>
         ) : total === 0 ? (
-          <Text style={styles.hint}>Nothing matches “{query.trim()}”.</Text>
+          <Text style={styles.hint}>
+            {searchError ?? `Nothing matches “${query.trim()}”.`}
+          </Text>
         ) : (
           <>
             {clipResults.length > 0 && (
@@ -89,9 +129,9 @@ export default function SearchScreen({
                   const p = analysisByClip.get(clip.id)?.payload;
                   const stage = p ? stages[p.funnelStage] : undefined;
                   return (
-                    <Pressable
+                    <ScalePressable
                       key={clip.id}
-                      onPress={() => onSelectClip(clip)}
+                      onPress={() => onSelectClip(clip, analysisByClip.get(clip.id))}
                       accessibilityRole="button"
                       style={styles.result}
                     >
@@ -106,7 +146,7 @@ export default function SearchScreen({
                             .join(' · ')}
                         </Text>
                       </View>
-                    </Pressable>
+                    </ScalePressable>
                   );
                 })}
               </View>
@@ -117,7 +157,7 @@ export default function SearchScreen({
                 {briefResults.map((brief) => {
                   const stage = stages[stageOf(brief)];
                   return (
-                    <Pressable
+                    <ScalePressable
                       key={brief.id}
                       onPress={() => onSelectBrief(brief)}
                       accessibilityRole="button"
@@ -127,7 +167,7 @@ export default function SearchScreen({
                       <Text style={styles.briefMeta}>
                         {stage.label} · {shotsOf(brief).length} shots
                       </Text>
-                    </Pressable>
+                    </ScalePressable>
                   );
                 })}
               </View>

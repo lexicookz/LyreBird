@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Alert, Share } from 'react-native';
@@ -151,11 +151,81 @@ jest.mock('../lib/calendar', () => {
   };
 });
 
+// Briefs live in Supabase, and the AI writes them through the worker. Here
+// both answer from memory: requestBrief behaves like the worker (inserts a
+// draft for the clip and brand), and updates behave like the table, including
+// the trigger that marks an edited draft 'edited'.
+jest.mock('../lib/briefs', () => {
+  const rows: any[] = [];
+  let n = 0;
+  const row = (over: any) => {
+    n += 1;
+    return {
+      id: `brief-ai-${n}`, owner_id: 'user-1', analysis_id: null,
+      hook: 'AI hook', script: 'AI script', shot_list: ['Shot one', 'Shot two'],
+      caption: 'AI caption', cta: 'AI CTA', hashtags: [], status: 'draft',
+      payload: null, prompt_version: 'v1', model_version: 'test',
+      created_at: new Date(Date.now() + n * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+      ...over,
+    };
+  };
+  return {
+    __rows: rows,
+    fetchBriefs: jest.fn(async () =>
+      [...rows].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).map((r) => ({ ...r }))
+    ),
+    updateBrief: jest.fn(async (id: string, patch: any) => {
+      const r = rows.find((x) => x.id === id);
+      Object.assign(r, patch, { status: r.status === 'draft' ? 'edited' : r.status });
+      return { ...r };
+    }),
+    requestBrief: jest.fn(async (clipId: string, brandId: string) => {
+      const r = row({ clip_id: clipId, brand_id: brandId, hook: 'An AI hook for Nima Studio' });
+      rows.push(r);
+      return r.id;
+    }),
+    requestRegenerate: jest.fn(async (briefId: string) => {
+      const old = rows.find((x) => x.id === briefId);
+      const r = row({ clip_id: old.clip_id, brand_id: old.brand_id, hook: 'A second AI hook' });
+      rows.push(r);
+      return r.id;
+    }),
+    requestAlternates: jest.fn(async () => [
+      { line: 'Alt hook one', on_screen_text: 'One', visual: 'Close-up' },
+      { line: 'Alt hook two', on_screen_text: '', visual: 'Wide shot' },
+      { line: 'Alt hook three', on_screen_text: 'Three', visual: '' },
+    ]),
+  };
+});
+
+// The brand row the brief writer reads. The mapping helpers are the real ones.
+jest.mock('../lib/brands', () => {
+  const actual = jest.requireActual('../lib/brands');
+  const rows: any[] = [];
+  return {
+    ...actual,
+    __rows: rows,
+    fetchMyBrand: jest.fn(async () => (rows[0] ? { ...rows[0] } : null)),
+    saveBrand: jest.fn(async (userId: string, setup: any, brandId?: string | null) => {
+      const columns = actual.brandColumns(setup);
+      if (brandId) {
+        Object.assign(rows.find((r) => r.id === brandId), columns);
+        return { ...rows.find((r) => r.id === brandId) };
+      }
+      const r = { id: 'brand-1', owner_id: userId, ...columns };
+      rows.push(r);
+      return { ...r };
+    }),
+  };
+});
+
 jest.mock('../lib/clips', () => {
   const rows: { clips: any[]; analyses: any[] } = { clips: [], analyses: [] };
   let n = 0;
   return {
     CLIPS_BUCKET: 'clips',
+    signedVideoUrl: jest.fn(async (path: string) => `https://signed/${path}`),
     __rows: rows,
     LIBRARY_PAGE_SIZE: 24,
     // Filtering, sorting and paging happen in Postgres now, so the mock
@@ -220,6 +290,7 @@ jest.mock('../lib/clips', () => {
 });
 
 jest.mock('expo-image-picker', () => ({
+  VideoExportPreset: { H264_960x540: 5 },
   getMediaLibraryPermissionsAsync: jest.fn(async () => ({
     granted: false,
     canAskAgain: true,
@@ -232,6 +303,8 @@ jest.mock('expo-image-picker', () => ({
       { uri: 'file:///a.mov', fileName: 'a.mov', duration: 31_000, width: 1080, height: 1920 },
       { uri: 'file:///b.mov', fileName: 'b.mov', duration: 44_000, width: 1080, height: 1920 },
       { uri: 'file:///c.mov', fileName: 'c.mov', duration: 120_000, width: 1080, height: 1920 },
+      // Short enough, but over the 50 MB upload limit.
+      { uri: 'file:///d.mov', fileName: 'd.mov', duration: 20_000, fileSize: 80 * 1024 * 1024, width: 1080, height: 1920 },
     ],
   })),
 }));
@@ -301,6 +374,13 @@ function withSampleCalendar() {
   );
 }
 
+/** Briefs already in the table, the way the database would hold them. */
+function withBriefs(briefs: any[]) {
+  const rows = require('../lib/briefs').__rows;
+  rows.length = 0;
+  briefs.forEach((b) => rows.push({ ...b }));
+}
+
 describe('App', () => {
   beforeEach(async () => {
     mockAnalyzeVideo();
@@ -310,6 +390,10 @@ describe('App', () => {
     clipsApi.__rows.clips = [];
     clipsApi.__rows.analyses = [];
     require('../lib/calendar').__rows.length = 0;
+    require('../lib/briefs').__rows.length = 0;
+    require('../lib/brands').__rows.length = 0;
+    for (const fn of ['requestBrief', 'requestRegenerate', 'requestAlternates', 'updateBrief']) require('../lib/briefs')[fn].mockClear();
+    require('../lib/brands').saveBrand.mockClear();
   });
 
   // ---------- first run and accounts ----------
@@ -425,7 +509,8 @@ describe('App', () => {
 
     await fireEvent.press(await findByLabelText('Add videos'));
     expect(await findByText('Add a video')).toBeTruthy();
-    expect(getByText('Videos should be 90 seconds or less in length')).toBeTruthy();
+    expect(getByText('Camera roll videos should be 90 seconds or less. Recordings can be longer.')).toBeTruthy();
+    expect(getByText('Screen recording')).toBeTruthy();
 
     // The × closes it again.
     await fireEvent.press(await findByLabelText('Close add a video'));
@@ -439,11 +524,51 @@ describe('App', () => {
     await fireEvent.press(getByText('Continue'));
     expect(ImagePicker.requestMediaLibraryPermissionsAsync).toHaveBeenCalled();
 
-    // The 2-minute video is over the 90-second cap and is left out.
+    // The 2-minute video is over the 90-second cap and the 80 MB one over the
+    // upload limit; both are left out, and the picker asked iOS for a smaller copy.
     expect(await findByText('2 videos selected')).toBeTruthy();
+    expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ videoExportPreset: 5 })
+    );
+    expect(Alert.alert).toHaveBeenCalledWith(
+      '2 videos were left out',
+      '1 was over 90 seconds and 1 was over 50 MB. Try a shorter clip.'
+    );
     await fireEvent.press(getByText('Import'));
 
     expect(await findByText('Analysing 2 new clips')).toBeTruthy();
+  });
+
+  test('a failed upload says why on screen', async () => {
+    await signedIn();
+    const upload = require('../lib/clips').uploadClip as jest.Mock;
+    upload.mockRejectedValueOnce(new Error('Upload failed: new row violates row-level security policy'));
+    const { findByLabelText, findByText, getByText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Add videos'));
+    await fireEvent.press(await findByText('Camera roll'));
+    const cont = queryByText('Continue');
+    if (cont) await fireEvent.press(cont);
+    await fireEvent.press(await findByText('Import'));
+
+    expect(await findByText('Upload failed: new row violates row-level security policy')).toBeTruthy();
+    await fireEvent.press(getByLabelText('Dismiss message'));
+    expect(queryByText('Upload failed: new row violates row-level security policy')).toBeNull();
+    expect(getByText('Library')).toBeTruthy();
+  });
+
+  test('the video can be watched from its analysis screen', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const { findByText, findByLabelText, findByTestId, getByLabelText, queryByTestId } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByLabelText('Watch the video'));
+
+    const player = await findByTestId('video-player');
+    expect(player.props.player.play).toHaveBeenCalled();
+    await fireEvent.press(getByLabelText('Close video'));
+    expect(queryByTestId('video-player')).toBeNull();
   });
 
   test('a video can be deleted from its analysis screen', async () => {
@@ -472,16 +597,137 @@ describe('App', () => {
     expect(await findByText('Why this one works')).toBeTruthy();
     await fireEvent.press(getByText('Adapt for my brand'));
 
+    // The brand is saved to Supabase first, then the AI is asked for the brief.
     expect(await findByText('Your version')).toBeTruthy();
+    const briefsApi = require('../lib/briefs');
+    expect(require('../lib/brands').saveBrand).toHaveBeenCalled();
+    expect(briefsApi.requestBrief).toHaveBeenCalledWith('cccccccc-0000-4000-8000-000000000001', 'brand-1');
+    expect(getByLabelText('Hook line').props.defaultValue).toBe('An AI hook for Nima Studio');
+
+    // Edits reach the table a moment after typing stops.
     await fireEvent.changeText(getByLabelText('Hook line'), 'Five snoozes. One rule.');
+    await waitFor(() => expect(briefsApi.__rows[0]).toMatchObject({ hook: 'Five snoozes. One rule.', status: 'edited' }), { timeout: 2000 });
     await fireEvent.press(getByLabelText('Back'));
 
     await fireEvent.press(await findByLabelText('Back'));
     await fireEvent.press(await findByLabelText('Briefs'));
     expect(await findByText('1 brief,\n1 not dated')).toBeTruthy();
     expect(getByText('“Five snoozes. One rule.”')).toBeTruthy();
-    const saved = JSON.parse((await AsyncStorage.getItem('lyrebird.briefs')) ?? '[]');
-    expect(saved[0]).toMatchObject({ hook: 'Five snoozes. One rule.', status: 'edited' });
+  });
+
+  test('a brief that already exists is opened, not written again', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const briefsApi = require('../lib/briefs');
+    await briefsApi.requestBrief('cccccccc-0000-4000-8000-000000000001', 'brand-1');
+    briefsApi.requestBrief.mockClear();
+    const { findByText, getByText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Open my brief'));
+
+    expect(await findByText('Your version')).toBeTruthy();
+    expect(briefsApi.requestBrief).not.toHaveBeenCalled();
+  });
+
+  test('when the AI limit is used up, Adapt says so and stays on the analysis', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    require('../lib/briefs').requestBrief.mockRejectedValueOnce(
+      new Error("Today's AI limit has been used up, so we couldn't write your brief. Try again later.")
+    );
+    const { findByText, getByText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Adapt for my brand'));
+
+    expect(await findByText("Today's AI limit has been used up, so we couldn't write your brief. Try again later.")).toBeTruthy();
+    expect(getByText('Why this one works')).toBeTruthy();
+    expect(queryByText('Your version')).toBeNull();
+  });
+
+  test('without a brand, Adapt asks you to set one up first', async () => {
+    await AsyncStorage.multiSet([
+      ['lyrebird.onboarded', 'true'],
+      ['lyrebird.account', JSON.stringify({ email: 'alicia@example.com' })],
+    ]);
+    await withOneAnalysedClip();
+    const { findByText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Adapt for my brand'));
+
+    expect(await findByText('Set up your brand first, so the brief can be written for it.')).toBeTruthy();
+    expect(await findByText('Every brief is written against this')).toBeTruthy();
+    expect(require('../lib/briefs').requestBrief).not.toHaveBeenCalled();
+  });
+
+  test('Regenerate writes a new version, keeps the old one, and moves its calendar slot', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const briefsApi = require('../lib/briefs');
+    const oldId = await briefsApi.requestBrief('cccccccc-0000-4000-8000-000000000001', 'brand-1');
+    const calRows = require('../lib/calendar').__rows;
+    calRows.push({
+      id: 'cal-1', owner_id: 'user-1', brief_id: oldId, scheduled_for: '2026-12-01', status: 'planned',
+      platform: null, notes: null, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+    });
+    const { findByText, getByLabelText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Open my brief'));
+    await fireEvent.press(await findByText('Regenerate'));
+
+    await waitFor(() => expect(getByLabelText('Hook line').props.defaultValue).toBe('A second AI hook'));
+    expect(briefsApi.__rows).toHaveLength(2);
+    expect(calRows.map((r: any) => r.brief_id)).toEqual([briefsApi.__rows[1].id]);
+    expect(calRows[0]).toMatchObject({ scheduled_for: '2026-12-01', status: 'planned' });
+  });
+
+  test('3 alternates offers other hooks, and picking one saves it as the hook line', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const briefsApi = require('../lib/briefs');
+    const id = await briefsApi.requestBrief('cccccccc-0000-4000-8000-000000000001', 'brand-1');
+    const { findByText, findByLabelText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Open my brief'));
+    await fireEvent.press(await findByText('3 alternates'));
+
+    expect(await findByText('Other hooks')).toBeTruthy();
+    expect(briefsApi.requestAlternates).toHaveBeenCalledWith(id);
+    await fireEvent.press(await findByLabelText('Use hook: Alt hook two'));
+
+    await waitFor(() => expect(getByLabelText('Hook line').props.defaultValue).toBe('Alt hook two'));
+    // Saves are debounced (700ms), so allow longer than waitFor's 1s default on a slow CI runner.
+    await waitFor(() => expect(briefsApi.updateBrief).toHaveBeenCalledWith(id, { hook: 'Alt hook two' }), { timeout: 3000 });
+    // Nothing else about the brief changed, and no new brief was written.
+    expect(briefsApi.__rows).toHaveLength(1);
+    expect(briefsApi.__rows[0].script).toBe('AI script');
+
+    // Reopening shows the same three without asking the AI again.
+    await fireEvent.press(await findByText('3 alternates'));
+    expect(await findByText('Alt hook one')).toBeTruthy();
+    expect(briefsApi.requestAlternates).toHaveBeenCalledTimes(1);
+    expect(queryByText('Writing 3 other hooks…')).toBeNull();
+  });
+
+  test('3 alternates shows the error in the sheet and can try again', async () => {
+    await signedIn();
+    await withOneAnalysedClip();
+    const briefsApi = require('../lib/briefs');
+    await briefsApi.requestBrief('cccccccc-0000-4000-8000-000000000001', 'brand-1');
+    briefsApi.requestAlternates.mockRejectedValueOnce(new Error("Today's AI limit has been used up."));
+    const { findByText } = await render(<App />);
+
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Open my brief'));
+    await fireEvent.press(await findByText('3 alternates'));
+
+    expect(await findByText("Today's AI limit has been used up.")).toBeTruthy();
+    await fireEvent.press(await findByText('Try again'));
+    expect(await findByText('Alt hook one')).toBeTruthy();
   });
 
   // ---------- calendar ----------
@@ -499,7 +745,7 @@ describe('App', () => {
   test('an entry on the calendar can be rescheduled and its status changed', async () => {
     await signedIn();
     withSampleCalendar();
-    await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
+    withBriefs(mockBriefs);
     const { findByLabelText, findByText, getByText, getAllByText, queryByText } = await render(<App />);
 
     await fireEvent.press(await findByLabelText('Calendar'));
@@ -518,10 +764,44 @@ describe('App', () => {
     );
   });
 
+  test('a calendar entry shows the funnel stage of its video, read-only in the sheet', async () => {
+    await signedIn();
+    withSampleCalendar();
+    withBriefs(mockBriefs);
+    const { findByLabelText, findByText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Calendar'));
+    // Brief 3 was written from a Convert (BOFU) video.
+    await fireEvent.press(await findByText('“Last chance before the price goes up”'));
+
+    expect(await findByText('Schedule brief')).toBeTruthy();
+    expect(getByLabelText("Stage, Convert, set by the video's analysis")).toBeTruthy();
+    expect(queryByText('Tap to change')).toBeNull();
+  });
+
+  test('a calendar save that fails shows a message that can be dismissed', async () => {
+    await signedIn();
+    withSampleCalendar();
+    withBriefs(mockBriefs);
+    require('../lib/calendar').scheduleBrief.mockRejectedValueOnce(
+      new Error('Could not schedule that brief: the database said no')
+    );
+    const { findByLabelText, findByText, getByText, getByLabelText, queryByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Calendar'));
+    await fireEvent.press(await findByText(SNOOZE_HOOK));
+    await fireEvent.press(await findByText('Save schedule'));
+
+    expect(await findByText('Could not schedule that brief: the database said no')).toBeTruthy();
+    await fireEvent.press(getByLabelText('Dismiss message'));
+    expect(queryByText('Could not schedule that brief: the database said no')).toBeNull();
+    expect(getByText('Calendar')).toBeTruthy();
+  });
+
   test('"See brief" on a calendar entry opens the brief', async () => {
     await signedIn();
     withSampleCalendar();
-    await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
+    withBriefs(mockBriefs);
     const { findByLabelText, findByText, getByText, queryByText } = await render(<App />);
 
     await fireEvent.press(await findByLabelText('Calendar'));
@@ -540,7 +820,7 @@ describe('App', () => {
   test('search finds videos and briefs', async () => {
     await signedIn();
     await withOneAnalysedClip();
-    await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs));
+    withBriefs(mockBriefs);
     const { findByLabelText, getByLabelText, findByText, getByText } = await render(<App />);
 
     await fireEvent.press(await findByLabelText('Search'));
@@ -548,6 +828,36 @@ describe('App', () => {
 
     expect(await findByText('VIDEOS · 1')).toBeTruthy();
     expect(getByText('BRIEFS · 1')).toBeTruthy();
+    // Videos come from the database's full-text search, not a filter on the phone.
+    expect(require('../lib/clips').fetchLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({ search: 'snooze' })
+    );
+  });
+
+  test('a video found by search opens even if it is not on the loaded library page', async () => {
+    await signedIn();
+    const sample = sampleLibrary();
+    const id = 'cccccccc-0000-4000-8000-000000000001';
+    const clip = sample.clips.find((c) => c.id === id)!;
+    const analysis = sample.analyses.find((a) => a.clip_id === id)!;
+    // The library page is empty; only the search query returns the clip.
+    const clipsApi = require('../lib/clips');
+    const original = clipsApi.fetchLibrary.getMockImplementation();
+    clipsApi.fetchLibrary.mockImplementation(async (q: any = {}) =>
+      q.search
+        ? { clips: [clip], analyses: [analysis], hasMore: false, total: 1 }
+        : { clips: [], analyses: [], hasMore: false, total: 0 }
+    );
+    const { findByLabelText, getByLabelText, findByText } = await render(<App />);
+
+    await fireEvent.press(await findByLabelText('Search'));
+    await fireEvent.changeText(getByLabelText('Search videos and briefs'), 'snooze');
+    try {
+      await fireEvent.press(await findByText(SNOOZE_HOOK));
+      expect(await findByText('Why this one works')).toBeTruthy();
+    } finally {
+      clipsApi.fetchLibrary.mockImplementation(original);
+    }
   });
 
   test('brand changes made from Settings are saved', async () => {
@@ -594,7 +904,7 @@ describe('App', () => {
 
   test('Export my briefs shares them as text', async () => {
     await signedIn();
-    await AsyncStorage.setItem('lyrebird.briefs', JSON.stringify(mockBriefs.slice(0, 1)));
+    withBriefs(mockBriefs.slice(0, 1));
     const { findByLabelText, findByText } = await render(<App />);
 
     await fireEvent.press(await findByLabelText('Settings'));

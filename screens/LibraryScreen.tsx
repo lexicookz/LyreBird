@@ -16,13 +16,14 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScalePressable } from '../components/motion';
 import BottomSheet from '../components/BottomSheet';
 import { BrandMark, PrimaryButton } from '../components/ui';
 import { useTabBarSpace } from '../components/BottomTabBar';
 
 import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FunnelStage, TypedAnalysis } from '../types';
-import { analysisProgress } from '../data/library';
+import { useFramePreview } from '../lib/framePreview';
 
 type StageFilter = 'all' | FunnelStage;
 type SortKey = 'focus' | 'newest' | 'oldest';
@@ -130,10 +131,13 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
   const { colors, stages } = useTheme();
   const styles = useStyles(makeStyles);
   const duration = formatDuration(clip.duration_seconds);
+  // No thumbnail from /prepare yet: show a frame from the video instead.
+  const frame = useFramePreview(clip, !clip.thumbnail_url && clip.status === 'ready');
+  const preview = clip.thumbnail_url ?? frame;
 
   if (clip.status === 'processing') {
     return (
-      <Pressable
+      <ScalePressable
         style={[styles.card, styles.cardPlain]}
         onLongPress={onDelete}
         accessibilityLabel={`Analysing ${clip.title ?? 'video'}`}
@@ -145,14 +149,14 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
       
           </View>
         </View>
-      </Pressable>
+      </ScalePressable>
     );
   }
 
   if (!analysis) {
     // Failed, or marked ready with no analysis row.
     return (
-      <Pressable
+      <ScalePressable
         style={[styles.card, styles.cardPlain, { padding: 12, gap: 8 }]}
         onPress={onPress}
         onLongPress={onDelete}
@@ -171,13 +175,13 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
         >
           <Text style={styles.outlinePillText}>Try again</Text>
         </Pressable>
-      </Pressable>
+      </ScalePressable>
     );
   }
 
   const stage = stages[analysis.payload.funnelStage];
   return (
-    <Pressable
+    <ScalePressable
       style={[styles.card, { backgroundColor: stage?.color ?? colors.sky }]}
       onPress={onPress}
       onLongPress={onDelete}
@@ -185,6 +189,15 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
       accessibilityRole="button"
     >
       <View style={[styles.block, { height: blockHeight }]}>
+        {preview && (
+          <Image
+            source={{ uri: preview }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+            accessibilityIgnoresInvertColors
+            testID={`thumbnail-${clip.id}`}
+          />
+        )}
         <PlayButton />
         {duration && (
           <View style={styles.duration}>
@@ -208,7 +221,7 @@ function ClipCard({ clip, analysis, hasBrief, now, blockHeight, onPress, onRetry
         </View>
         <Text style={styles.saved}>{savedAgo(clip.created_at, now)}</Text>
       </View>
-    </Pressable>
+    </ScalePressable>
   );
 }
 
@@ -219,13 +232,11 @@ function EmptyLibrary({
   brandColor,
   onOpenBrandProfile,
   onAddVideos,
-  onLoadSamples,
 }: {
   brandName?: string;
   brandColor?: string;
   onOpenBrandProfile: () => void;
   onAddVideos: () => void;
-  onLoadSamples: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
@@ -264,9 +275,6 @@ function EmptyLibrary({
       </View>
       <View style={styles.emptyActions}>
         <PrimaryButton label="Add your first videos" onPress={onAddVideos} style={styles.ctaShadow} />
-        <Pressable onPress={onLoadSamples} hitSlop={8} accessibilityRole="button">
-          <Text style={styles.sampleLink}>Just looking? Explore with sample videos</Text>
-        </Pressable>
       </View>
     </ScrollView>
   );
@@ -309,7 +317,6 @@ export default function LibraryScreen({
   onSelectVideo,
   onOpenBrandProfile,
   onAddVideos,
-  onLoadSamples,
   onRetry,
   onDelete,
   tags,
@@ -352,7 +359,6 @@ export default function LibraryScreen({
   onSelectVideo: (clip: Clip) => void;
   onOpenBrandProfile: () => void;
   onAddVideos: () => void;
-  onLoadSamples: () => void;
   onRetry: (clipId: string) => void;
   onDelete: (clipId: string) => void;
 }) {
@@ -415,7 +421,6 @@ export default function LibraryScreen({
           brandColor={brandColor}
           onOpenBrandProfile={onOpenBrandProfile}
           onAddVideos={onAddVideos}
-          onLoadSamples={onLoadSamples}
         />
       </SafeAreaView>
     );
@@ -779,6 +784,14 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     borderRadius: radius.card,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  thumbnail: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   play: {
     width: 36,
@@ -998,12 +1011,6 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 7,
     elevation: 6,
-  },
-  sampleLink: {
-    fontFamily: fonts.bodySemiBold,
-    fontSize: 12.5,
-    color: colors.textLabel,
-    textAlign: 'center',
   },
 });
 

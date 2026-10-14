@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Share } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, View, StyleSheet, Share } from 'react-native';
 import LibraryScreen, { confirmDeleteClip } from './screens/LibraryScreen';
 import BriefsScreen from './screens/BriefsScreen';
 import VideoDetailScreen from './screens/VideoDetailScreen';
@@ -16,18 +16,26 @@ import {
   completeOnboarding,
   loadOnboarding,
   brandColorOf,
+  emptyBrandSetup,
   saveBrandSetup,
 } from './data/brandSetup';
-import { Account, loadAccount, signIn, signOut, signUp } from './data/account';
+import { Account, currentUserId, loadAccount, signIn, signOut, signUp } from './data/account';
+import { fetchMyBrand, saveBrand, setupFromBrand } from './lib/brands';
 import BottomTabBar, { TabKey, useTabBarSpace } from './components/BottomTabBar';
 import { ImportBar, PhotoAccessSheet, useVideoImport } from './components/ImportFlow';
 import AddVideoMenu from './components/AddVideoMenu';
+import RecordingProgress from './components/RecordingProgress';
+import { Appear } from './components/motion';
+import { success, warning } from './lib/haptics';
+import { useRecordingImport } from './data/recordings';
+import { ErrorBanner } from './components/ui';
 import { useLibrary } from './data/library';
 import { suggestDate, useCalendar } from './data/calendar';
-import { briefAsText, briefFromAnalysis, useBriefs } from './data/briefs';
+import { briefAsText, useBriefs } from './data/briefs';
 import ScheduleSheet from './components/ScheduleSheet';
-import { mockAnalyses, mockBrandProfile, mockClips } from './data/mockVideos';
-import { Brief, Clip, FunnelStage } from './types';
+import { mockAnalyses, mockClips } from './data/mockVideos';
+import { Brief, Clip, FunnelStage, TypedAnalysis } from './types';
+import { fetchLibrary } from './lib/clips';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { Colors, ThemeProvider, useStyles, useTheme } from './theme';
@@ -59,10 +67,45 @@ function AppContent() {
   const tabBarSpace = useTabBarSpace();
   const library = useLibrary();
   const videoImport = useVideoImport();
-  const calendar = useCalendar();
+  // Screen recordings: the split clips appear as soon as the worker has cut them.
+  const recordingImport = useRecordingImport({ onClipsReady: () => library.refresh(false) });
   const briefs = useBriefs();
+
+  /**
+   * A brief's funnel stage comes from the analysis of the clip it was written
+   * from. The calendar doesn't store a stage, so it asks this for each entry.
+   */
+  const stageForBriefId = useCallback(
+    (briefId: string): FunnelStage => {
+      const brief = briefs.all.find((b) => b.id === briefId);
+      const analysis =
+        library.analyses.find((a) => a.id === brief?.analysis_id) ??
+        library.analyses.find((a) => a.clip_id === brief?.clip_id) ??
+        mockAnalyses.find((a) => a.id === brief?.analysis_id);
+      return analysis?.payload.funnelStage ?? 'TOFU';
+    },
+    [briefs.all, library.analyses]
+  );
+  const calendar = useCalendar(stageForBriefId);
   /** The brief whose schedule sheet is open, if any. */
   const [schedulingBriefId, setSchedulingBriefId] = useState<string | null>(null);
+  /**
+   * Videos opened from Search results. Search asks the database, so a result
+   * may not be on the Library page that's loaded; keep it so its screen opens.
+   */
+  const [pickedClips, setPickedClips] = useState<{ clip: Clip; analysis?: TypedAnalysis }[]>([]);
+  const searchClips = useCallback(
+    (query: string) =>
+      fetchLibrary({ search: query, pageSize: 30 }).then((page) => ({
+        clips: page.clips,
+        analyses: page.analyses as TypedAnalysis[],
+      })),
+    []
+  );
+  /** The user's brands row in Supabase, which the AI brief writer reads. */
+  const [brandId, setBrandId] = useState<string | null>(null);
+  /** A message about the brand that has nowhere else to go (failed save, no brand yet). */
+  const [brandError, setBrandError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([loadOnboarding(), loadAccount()]).then(([{ onboarded, brand }, acct]) => {
@@ -73,24 +116,59 @@ function AppContent() {
     });
   }, []);
 
+  // Once signed in: reload everything for this account, and find its brand.
+  // The stores only load once on launch, so without this a fresh log-in would
+  // show an empty library until the app was restarted.
+  useEffect(() => {
+    if (!account) return;
+    library.refresh();
+    calendar.refresh();
+    briefs.refresh();
+    fetchMyBrand()
+      .then((row) => {
+        setBrandId(row?.id ?? null);
+        // On a new phone the brand exists in Supabase but not here yet.
+        if (row) setBrandSetup((local) => local ?? setupFromBrand(row, emptyBrandSetup));
+      })
+      .catch((e) => setBrandError(e instanceof Error ? e.message : 'Could not load your brand.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the account changes
+  }, [account?.email]);
+
+  /** Save the brand on the phone and in Supabase. Resolves to the brand's id, or null. */
+  async function persistBrand(setup: BrandSetup): Promise<string | null> {
+    saveBrandSetup(setup).catch(() => {});
+    const userId = await currentUserId();
+    if (!userId) return null;
+    try {
+      const row = await saveBrand(userId, setup, brandId);
+      setBrandId(row.id);
+      return row.id;
+    } catch (e) {
+      setBrandError(e instanceof Error ? e.message : 'Could not save your brand.');
+      return null;
+    }
+  }
+
   // ---------- lookups across the stores ----------
 
   function clipFor(clipId: string): Clip | undefined {
     return (
-      library.clips.find((c) => c.id === clipId) ?? mockClips.find((c) => c.id === clipId)
+      library.clips.find((c) => c.id === clipId) ??
+      pickedClips.find((p) => p.clip.id === clipId)?.clip ??
+      mockClips.find((c) => c.id === clipId)
     );
   }
 
-  /** A brief's funnel stage: from its analysis, else its calendar entry. */
-  function stageOf(brief: Brief): FunnelStage {
-    const analysis =
-      library.analyses.find((a) => a.id === brief.analysis_id) ??
-      mockAnalyses.find((a) => a.id === brief.analysis_id);
+  function analysisFor(clipId: string): TypedAnalysis | undefined {
     return (
-      analysis?.payload.funnelStage ??
-      calendar.items.find((i) => i.briefId === brief.id)?.stage ??
-      'TOFU'
+      library.analyses.find((a) => a.clip_id === clipId) ??
+      pickedClips.find((p) => p.clip.id === clipId)?.analysis
     );
+  }
+
+  /** A brief's funnel stage, from the analysis of its clip. */
+  function stageOf(brief: Brief): FunnelStage {
+    return stageForBriefId(brief.id);
   }
 
   const briefClipIds = new Set(briefs.briefs.map((b) => b.clip_id));
@@ -117,15 +195,16 @@ function AppContent() {
     setStage('done');
     // Not awaited: if the write fails the user just sees onboarding again next launch.
     completeOnboarding(setup).catch(() => {});
+    if (setup) persistBrand(setup);
   }
 
   function handleSaveBrand(setup: BrandSetup) {
     setBrandSetup(setup);
-    saveBrandSetup(setup).catch(() => {});
+    persistBrand(setup);
     closePushed();
   }
 
-  /** Signs out. Brand, videos and briefs stay on the phone. */
+  /** Signs out. Everything stays in the account for the next log-in. */
   function handleSignOut() {
     setPushed(null);
     setActiveTab('library');
@@ -135,14 +214,10 @@ function AppContent() {
   }
 
   function handleImport() {
+    success();
     library.importVideos(videoImport.pending);
     videoImport.clearPending();
     setActiveTab('library');
-  }
-
-  function handleLoadSamples() {
-    library.loadSamples();
-    briefs.loadSamples();
   }
 
   function handleExportBriefs() {
@@ -150,19 +225,47 @@ function AppContent() {
     Share.share({ message: text || 'No briefs yet.' });
   }
 
-  /** "Adapt for my brand": open the clip's brief, creating a draft if there isn't one. */
-  function handleAdapt(clip: Clip) {
+  /**
+   * "Adapt for my brand": open the clip's brief, or have the AI write one.
+   * The AI needs the brand in Supabase, so it's saved first if it isn't yet.
+   */
+  async function handleAdapt(clip: Clip) {
     const existing = briefs.briefs.find((b) => b.clip_id === clip.id);
     const backTo: PushedScreen = { type: 'detail', clipId: clip.id };
     if (existing) {
       setPushed({ type: 'brief', briefId: existing.id, backTo });
       return;
     }
-    const analysis = library.analyses.find((a) => a.clip_id === clip.id);
-    if (!analysis) return;
-    const brief = briefFromAnalysis(clip, analysis, mockBrandProfile.id);
-    briefs.add(brief);
-    setPushed({ type: 'brief', briefId: brief.id, backTo });
+    if (!brandSetup?.name) {
+      setBrandError('Set up your brand first, so the brief can be written for it.');
+      setPushed({ type: 'brandProfile', backTo });
+      return;
+    }
+    const id = brandId ?? (await persistBrand(brandSetup));
+    if (!id) return;
+    const briefId = await briefs.generate(clip.id, id);
+    if (briefId) {
+      success();
+      setPushed({ type: 'brief', briefId, backTo });
+    }
+  }
+
+  /**
+   * Regenerate writes a new brief and keeps the old one. If the old one was on
+   * the calendar, the new one takes its place there.
+   */
+  async function handleRegenerate(brief: Brief) {
+    const newId = await briefs.regenerate(brief.id);
+    if (!newId) return;
+    success();
+    const entry = calendar.items.find((i) => i.briefId === brief.id);
+    if (entry) {
+      await calendar.schedule({ briefId: newId, date: entry.date, status: entry.status });
+      await calendar.unschedule(brief.id);
+    }
+    setPushed((current) =>
+      current?.type === 'brief' ? { ...current, briefId: newId } : { type: 'brief', briefId: newId }
+    );
   }
 
   const openSettings = () => setPushed({ type: 'settings' });
@@ -175,36 +278,64 @@ function AppContent() {
   }
 
   if (stage === 'loading' || !library.loaded || !calendar.loaded || !briefs.loaded) {
-    return null;
+    // A calm screen in the app's colours, not a blank flash.
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color={colors.textFaint} accessibilityLabel="Loading" />
+      </View>
+    );
   }
 
   // ---------- signed out / first run ----------
 
   if (stage === 'opener') {
-    return <OpenerScreen onStart={() => setStage('signup')} onSkip={() => setStage('login')} />;
+    return (
+      <Appear key="opener" style={styles.fill}>
+        <OpenerScreen onStart={() => setStage('signup')} onSkip={() => setStage('login')} />
+      </Appear>
+    );
   }
 
   if (stage === 'signup' || stage === 'login') {
     return (
-      <AuthScreen
-        key={stage}
-        mode={stage}
-        savedCount={library.clips.length}
-        onSubmit={handleAuth}
-        onSwitchMode={() => setStage(stage === 'login' ? 'signup' : 'login')}
-      />
+      <Appear key={stage} style={styles.fill}>
+        <AuthScreen
+          mode={stage}
+          savedCount={library.clips.length}
+          onSubmit={handleAuth}
+          onSwitchMode={() => setStage(stage === 'login' ? 'signup' : 'login')}
+        />
+      </Appear>
     );
   }
 
   if (stage === 'brand') {
     return (
-      <BrandSetupScreen
-        initial={brandSetup}
-        onBack={() => setStage('opener')}
-        onDone={handleFinishOnboarding}
-      />
+      <Appear key="brand" from="right" style={styles.fill}>
+        <BrandSetupScreen
+          initial={brandSetup}
+          onBack={() => setStage('opener')}
+          onDone={(setup) => {
+            success();
+            handleFinishOnboarding(setup);
+          }}
+        />
+      </Appear>
     );
   }
+
+  // One message at a time, most important first: without a brand there's no
+  // brief; a failed brief or upload matters more than a calendar hiccup.
+  const message: { text: string; dismiss: () => void } | null = brandError
+    ? { text: brandError, dismiss: () => setBrandError(null) }
+    : briefs.error
+      ? { text: briefs.error, dismiss: briefs.clearError }
+      : library.error
+        ? { text: library.error, dismiss: library.clearError }
+        : calendar.error
+          ? { text: calendar.error, dismiss: calendar.clearError }
+          : null;
+  const banner = message && <ErrorBanner message={message.text} onDismiss={message.dismiss} />;
 
   // Rendered over whichever screen opened it (a tab or a brief).
   const schedulingBrief = briefs.briefs.find((b) => b.id === schedulingBriefId);
@@ -217,7 +348,10 @@ function AppContent() {
       defaultStage={schedulingBrief ? stageOf(schedulingBrief) : 'TOFU'}
       suggestedDate={suggestDate(calendar.items)}
       onSave={(values) => {
-        if (schedulingBriefId) calendar.schedule({ briefId: schedulingBriefId, ...values });
+        if (schedulingBriefId) {
+          success();
+          calendar.schedule({ briefId: schedulingBriefId, ...values });
+        }
         setSchedulingBriefId(null);
       }}
       onRemove={() => {
@@ -246,21 +380,30 @@ function AppContent() {
       brandSetup.tones.length
     );
     return (
-      <SettingsScreen
-        brandName={brandSetup?.name}
-        brandColor={brandColor}
-        email={account?.email}
-        brandComplete={complete}
-        onOpenBrand={() => setPushed({ type: 'brandProfile', backTo: { type: 'settings' } })}
-        onExportBriefs={handleExportBriefs}
-        onSignOut={handleSignOut}
-        onBack={closePushed}
-      />
+      <Appear key="settings" from="right" style={styles.fill}>
+        <SettingsScreen
+          brandName={brandSetup?.name}
+          brandColor={brandColor}
+          email={account?.email}
+          brandComplete={complete}
+          onOpenBrand={() => setPushed({ type: 'brandProfile', backTo: { type: 'settings' } })}
+          onExportBriefs={handleExportBriefs}
+          onSignOut={handleSignOut}
+          onBack={closePushed}
+        />
+      </Appear>
     );
   }
 
   if (pushed?.type === 'brandProfile') {
-    return <BrandProfileScreen setup={brandSetup} onSave={handleSaveBrand} onBack={closePushed} />;
+    return (
+      <>
+        <Appear key="brandProfile" from="right" style={styles.fill}>
+          <BrandProfileScreen setup={brandSetup} onSave={handleSaveBrand} onBack={closePushed} />
+        </Appear>
+        {banner}
+      </>
+    );
   }
 
   const openBrief =
@@ -268,17 +411,21 @@ function AppContent() {
   if (openBrief) {
     return (
       <>
-        <BriefScreen
-          key={openBrief.id}
-          brief={openBrief}
-          clip={clipFor(openBrief.clip_id)}
-          brandName={brandSetup?.name}
-          entry={calendar.items.find((i) => i.briefId === openBrief.id)}
-          onEdit={(patch) => briefs.edit(openBrief.id, patch)}
-          onBack={closePushed}
-          onSchedule={() => setSchedulingBriefId(openBrief.id)}
-        />
+        <Appear key={`brief-${openBrief.id}`} from="right" style={styles.fill}>
+          <BriefScreen
+            brief={openBrief}
+            clip={clipFor(openBrief.clip_id)}
+            brandName={brandSetup?.name}
+            entry={calendar.items.find((i) => i.briefId === openBrief.id)}
+            onEdit={(patch) => briefs.edit(openBrief.id, patch)}
+            onBack={closePushed}
+            onSchedule={() => setSchedulingBriefId(openBrief.id)}
+            onRegenerate={() => handleRegenerate(openBrief)}
+            regenerating={briefs.isWorking(openBrief.id)}
+          />
+        </Appear>
         {scheduleSheet}
+        {banner}
       </>
     );
   }
@@ -286,19 +433,26 @@ function AppContent() {
   const detailClip = pushed?.type === 'detail' ? clipFor(pushed.clipId) : undefined;
   if (detailClip) {
     return (
-      <VideoDetailScreen
-        video={detailClip}
-        analysis={library.analyses.find((a) => a.clip_id === detailClip.id)}
-        hasBrief={briefClipIds.has(detailClip.id)}
-        onBack={closePushed}
-        onAdapt={() => handleAdapt(detailClip)}
-        onDelete={() =>
-          confirmDeleteClip(detailClip, () => {
-            library.removeClip(detailClip.id);
-            setPushed(null);
-          })
-        }
-      />
+      <>
+        <Appear key={`detail-${detailClip.id}`} from="right" style={styles.fill}>
+          <VideoDetailScreen
+            video={detailClip}
+            analysis={analysisFor(detailClip.id)}
+            hasBrief={briefClipIds.has(detailClip.id)}
+            onBack={closePushed}
+            onAdapt={() => handleAdapt(detailClip)}
+            adapting={briefs.isWorking(detailClip.id)}
+            onDelete={() =>
+              confirmDeleteClip(detailClip, () => {
+                warning();
+                library.removeClip(detailClip.id);
+                setPushed(null);
+              })
+            }
+          />
+        </Appear>
+        {banner}
+      </>
     );
   }
 
@@ -328,7 +482,6 @@ function AppContent() {
             onSelectVideo={(clip) => setPushed({ type: 'detail', clipId: clip.id })}
             onOpenBrandProfile={openSettings}
             onAddVideos={videoImport.start}
-            onLoadSamples={handleLoadSamples}
             onRetry={library.retryAnalysis}
             onDelete={library.removeClip}
           />
@@ -336,11 +489,13 @@ function AppContent() {
       case 'search':
         return (
           <SearchScreen
-            clips={library.clips}
-            analyses={library.analyses}
+            searchClips={searchClips}
             briefs={briefs.briefs}
             stageOf={stageOf}
-            onSelectClip={(clip) => setPushed({ type: 'detail', clipId: clip.id })}
+            onSelectClip={(clip, analysis) => {
+              setPickedClips((current) => [{ clip, analysis }, ...current.filter((p) => p.clip.id !== clip.id)]);
+              setPushed({ type: 'detail', clipId: clip.id });
+            }}
             onSelectBrief={(brief) => setPushed({ type: 'brief', briefId: brief.id })}
           />
         );
@@ -361,7 +516,7 @@ function AppContent() {
         return (
           <CalendarScreen
             items={calendar.items}
-            briefs={briefs.briefs}
+            briefs={briefs.all}
             clipFor={clipFor}
             brandName={brandSetup?.name}
             brandColor={brandColor}
@@ -377,7 +532,9 @@ function AppContent() {
       {/* The bar floats over the bottom of the screen. The Library scrolls under it
           and pads itself; other tabs are kept clear of it here. */}
       <View style={[styles.content, activeTab !== 'library' && { paddingBottom: tabBarSpace }]}>
-        {renderTabContent()}
+        <Appear key={activeTab} duration={160} style={styles.fill}>
+          {renderTabContent()}
+        </Appear>
       </View>
       {addMenuOpen && (
         <AddVideoMenu
@@ -385,6 +542,11 @@ function AppContent() {
           onCameraRoll={() => {
             setAddMenuOpen(false);
             videoImport.start();
+          }}
+          onScreenRecording={() => {
+            setAddMenuOpen(false);
+            setActiveTab('library');
+            recordingImport.start();
           }}
           onClose={() => setAddMenuOpen(false)}
         />
@@ -411,12 +573,30 @@ function AppContent() {
         onContinue={videoImport.continueFromSheet}
         onClose={videoImport.closeSheet}
       />
+      <RecordingProgress
+        state={recordingImport.state}
+        // Above the "N videos selected" bar when both are showing.
+        bottom={tabBarSpace + 4 + (videoImport.pending.length > 0 ? 76 : 0)}
+        onRetry={recordingImport.retry}
+        onDismiss={recordingImport.dismiss}
+      />
       {scheduleSheet}
+      {banner}
     </View>
   );
 }
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
+  fill: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -432,6 +612,12 @@ function ThemedStatusBar() {
   return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
 }
 
+/** The page colour behind everything, so a screen fading in never shows white in dark mode. */
+function ThemedRoot({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
+  return <View style={{ flex: 1, backgroundColor: colors.bg }}>{children}</View>;
+}
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);
 
@@ -443,7 +629,9 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <ThemedStatusBar />
-      <AppContent />
+        <ThemedRoot>
+          <AppContent />
+        </ThemedRoot>
       </ThemeProvider>
     </SafeAreaProvider>
   );

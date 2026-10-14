@@ -17,10 +17,16 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.brief_schema import BrandProfile, to_brief_columns
+from app.brief_schema import BrandProfile, Hook, to_brief_columns
 from app.config import settings
 from app.db import get_client
-from app.gemini import GeminiError, GeminiQuotaExceeded, GeminiTimeout, write_brief
+from app.gemini import (
+    GeminiError,
+    GeminiQuotaExceeded,
+    GeminiTimeout,
+    write_brief,
+    write_hook_alternates,
+)
 from app.models import Brand
 from app.prompts import PromptError, load as load_prompt, versions
 
@@ -55,6 +61,18 @@ class BriefResponse(BaseModel):
     payload: dict
 
 
+class AlternatesResponse(BaseModel):
+    """Three other hooks for a brief. Nothing is stored -- the app saves the
+    one the user picks as an ordinary edit to the brief's hook."""
+
+    brief_id: UUID
+    prompt_version: str
+    hooks: list[Hook]
+
+
+ALTERNATES_COUNT = 3
+
+
 def _one(client, table: str, row_id: UUID, label: str) -> dict:
     rows = client.table(table).select("*").eq("id", str(row_id)).execute().data or []
     if not rows:
@@ -62,18 +80,9 @@ def _one(client, table: str, row_id: UUID, label: str) -> dict:
     return rows[0]
 
 
-def _generate_and_insert(
-    client,
-    clip: dict,
-    brand: dict,
-    prompt_version: str | None,
-) -> BriefResponse:
-    """Generate a brief and insert it. Always an insert, never an update.
-
-    Both the first brief and every regenerate come through here, so there is
-    no path in the worker that can overwrite an existing brief — the property
-    BE-17 depends on is structural rather than remembered.
-    """
+def _analysis_and_profile(client, clip: dict, brand: dict) -> tuple[dict, BrandProfile]:
+    """The clip's latest analysis and the brand as a profile: what every
+    generation from a brief reads before calling the model."""
     analyses = (
         client.table("analyses")
         .select("*")
@@ -104,22 +113,46 @@ def _generate_and_insert(
             detail=f"brand {brand['id']} cannot be read as a profile: {exc}",
         ) from exc
 
-    try:
-        draft, used_version = write_brief(analysis["payload"], profile, prompt_version)
-    except GeminiQuotaExceeded as exc:
-        # Before GeminiTimeout: a quota failure is a GeminiError too, and
-        # 422 would tell the screen the brief was malformed when the truth is
-        # that the key is spent. Matches the handling in routers/clips.py.
+    return analysis, profile
+
+
+def _gemini_http_error(exc: GeminiError) -> HTTPException:
+    """The status a model failure is reported as.
+
+    Quota first: a quota failure is a GeminiError too, and 422 would tell the
+    screen the brief was malformed when the truth is that the key is spent.
+    Matches the handling in routers/clips.py.
+    """
+    if isinstance(exc, GeminiQuotaExceeded):
         headers = (
             {"Retry-After": str(int(exc.retry_after_seconds))}
             if exc.retry_after_seconds
             else None
         )
-        raise HTTPException(status_code=429, detail=str(exc), headers=headers) from exc
-    except GeminiTimeout as exc:
-        raise HTTPException(status_code=504, detail=str(exc)) from exc
+        return HTTPException(status_code=429, detail=str(exc), headers=headers)
+    if isinstance(exc, GeminiTimeout):
+        return HTTPException(status_code=504, detail=str(exc))
+    return HTTPException(status_code=422, detail=str(exc))
+
+
+def _generate_and_insert(
+    client,
+    clip: dict,
+    brand: dict,
+    prompt_version: str | None,
+) -> BriefResponse:
+    """Generate a brief and insert it. Always an insert, never an update.
+
+    Both the first brief and every regenerate come through here, so there is
+    no path in the worker that can overwrite an existing brief — the property
+    BE-17 depends on is structural rather than remembered.
+    """
+    analysis, profile = _analysis_and_profile(client, clip, brand)
+
+    try:
+        draft, used_version = write_brief(analysis["payload"], profile, prompt_version)
     except GeminiError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise _gemini_http_error(exc) from exc
 
     # to_brief_columns owns the mapping from draft to columns: the flat ones
     # the screens edit, plus payload exactly as generated. Deriving shot_list
@@ -241,6 +274,47 @@ def regenerate_brief(
         raise HTTPException(status_code=403, detail="clip and brand belong to different users")
 
     return _generate_and_insert(client, clip, brand, prompt_version)
+
+
+@router.post("/{brief_id}/alternates", response_model=AlternatesResponse)
+def brief_alternates(brief_id: UUID) -> AlternatesResponse:
+    """Three other hooks for a brief, from one model call.
+
+    Read-only: nothing is inserted or updated. The brief, its analysis and the
+    brand are read as for regenerate, plus the brief's current hook so the
+    model knows what not to repeat. The app saves whichever hook the user
+    picks as a normal edit, under RLS, like any other change to the brief.
+    """
+    client = get_client()
+
+    existing = _one(client, "briefs", brief_id, "brief")
+    clip = _one(client, "clips", UUID(existing["clip_id"]), "clip")
+    brand = _one(client, "brands", UUID(existing["brand_id"]), "brand")
+
+    # The worker bypasses RLS, so the owner check is ours to make.
+    if not (existing["owner_id"] == clip["owner_id"] == brand["owner_id"]):
+        raise HTTPException(status_code=403, detail="brief, clip and brand belong to different users")
+
+    analysis, profile = _analysis_and_profile(client, clip, brand)
+
+    try:
+        result, used_version = write_hook_alternates(
+            analysis["payload"], profile, existing.get("hook") or ""
+        )
+    except GeminiError as exc:
+        raise _gemini_http_error(exc) from exc
+
+    # The schema cannot say "exactly three" (Gemini rejects minItems), so the
+    # count is enforced here. Extra hooks are dropped; too few is a bad
+    # response, reported like any other.
+    hooks = [hook for hook in result.hooks if hook.line.strip()][:ALTERNATES_COUNT]
+    if len(hooks) < ALTERNATES_COUNT:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Gemini returned {len(hooks)} usable hooks, expected {ALTERNATES_COUNT}",
+        )
+
+    return AlternatesResponse(brief_id=brief_id, prompt_version=used_version, hooks=hooks)
 
 
 @router.get("/prompt-versions", response_model=list[str])

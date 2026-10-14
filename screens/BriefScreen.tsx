@@ -3,7 +3,6 @@
 // edited in place and saved as they type.
 import React, { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,15 +15,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AlternatesSheet from '../components/AlternatesSheet';
 import { BackButton, Eyebrow } from '../components/ui';
 import { BriefEdit, briefAsText, shotsOf } from '../data/briefs';
 import { CALENDAR_STATUSES, CalendarItem } from '../data/calendar';
 import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Brief, Clip } from '../types';
-
-function comingSoon() {
-  Alert.alert('Coming soon', 'Rewriting the hook needs the AI, which isn’t connected yet.');
-}
 
 function formatTime(iso: string) {
   const d = new Date(iso);
@@ -45,6 +41,8 @@ export default function BriefScreen({
   onEdit,
   onBack,
   onSchedule,
+  onRegenerate,
+  regenerating = false,
 }: {
   brief: Brief;
   clip?: Clip;
@@ -54,11 +52,19 @@ export default function BriefScreen({
   onEdit: (patch: BriefEdit) => void;
   onBack: () => void;
   onSchedule: () => void;
+  /** Ask the AI for a fresh version. The current one is kept. */
+  onRegenerate: () => void;
+  /** The AI is rewriting this brief right now. */
+  regenerating?: boolean;
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   // Shots are kept locally so an empty row (just added) survives until typed in.
   const [shots, setShots] = useState<string[]>(() => shotsOf(brief));
+  const [showAlternates, setShowAlternates] = useState(false);
+  // The hook box is uncontrolled (so typing never fights a re-render). Picking
+  // an alternate gives it a new key, which loads the new line into it.
+  const [hookSeed, setHookSeed] = useState(() => ({ key: 0, text: brief.hook ?? '' }));
 
   function updateShots(next: string[]) {
     setShots(next);
@@ -93,7 +99,8 @@ export default function BriefScreen({
           <View style={[styles.card, { backgroundColor: colors.green, gap: 10 }]}>
             <Eyebrow color={colors.onPastelBody}>Hook line</Eyebrow>
             <TextInput
-              defaultValue={brief.hook ?? ''}
+              key={hookSeed.key}
+              defaultValue={hookSeed.text}
               onChangeText={(hook) => onEdit({ hook })}
               multiline
               placeholder="Write the first line people hear"
@@ -102,10 +109,20 @@ export default function BriefScreen({
               style={styles.hookInput}
             />
             <View style={styles.pillRow}>
-              <Pressable onPress={comingSoon} style={styles.framePill} accessibilityRole="button">
-                <Text style={styles.framePillText}>Regenerate</Text>
+              <Pressable
+                onPress={onRegenerate}
+                disabled={regenerating}
+                style={[styles.framePill, regenerating && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityState={{ busy: regenerating, disabled: regenerating }}
+              >
+                <Text style={styles.framePillText}>{regenerating ? 'Rewriting…' : 'Regenerate'}</Text>
               </Pressable>
-              <Pressable onPress={comingSoon} style={styles.framePill} accessibilityRole="button">
+              <Pressable
+                onPress={() => setShowAlternates(true)}
+                style={styles.framePill}
+                accessibilityRole="button"
+              >
                 <Text style={styles.framePillText}>3 alternates</Text>
               </Pressable>
             </View>
@@ -211,6 +228,17 @@ export default function BriefScreen({
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <AlternatesSheet
+        visible={showAlternates}
+        briefId={brief.id}
+        onClose={() => setShowAlternates(false)}
+        onPick={(hook) => {
+          onEdit({ hook: hook.line });
+          setHookSeed((seed) => ({ key: seed.key + 1, text: hook.line }));
+          setShowAlternates(false);
+        }}
+      />
     </SafeAreaView>
   );
 }

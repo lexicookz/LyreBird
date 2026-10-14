@@ -80,6 +80,7 @@ describe('BriefScreen', () => {
         onEdit={onEdit}
         onBack={jest.fn()}
         onSchedule={jest.fn()}
+        onRegenerate={jest.fn()}
       />
     );
 

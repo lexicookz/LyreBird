@@ -1,20 +1,28 @@
 // data/briefs.ts
-// The user's briefs, kept on the device for now (stand-in for the `briefs` table).
-// A new install has none; they come from "Adapt for my brand" on an analysed
-// clip, or from the sample library.
+// The user's briefs, in Supabase (lib/briefs.ts).
 //
-// "Adapt" is NOT AI yet: it copies the analysis into a draft (hook, shot beats
-// as the shot list, CTA) for the user to rewrite. When the worker can generate
-// briefs, replace `briefFromAnalysis` with a call to it.
-import { useCallback, useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { mockBriefs } from './mockVideos';
-import type { Brief, Clip, TypedAnalysis } from '../types';
-
-const STORAGE_KEY = 'lyrebird.briefs';
+// "Adapt for my brand" asks the worker's AI to write a brief from the clip's
+// analysis and the user's brand (POST /briefs). Regenerate asks for a fresh
+// one; the worker keeps the old brief, so a clip can have several and the
+// newest is the one shown (`latest`).
+//
+// Edits are applied on screen straight away and written to the database a
+// moment after the user stops typing, so a keystroke isn't a request.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BriefPatch,
+  fetchBriefs,
+  requestBrief,
+  requestRegenerate,
+  updateBrief,
+} from '../lib/briefs';
+import type { Brief } from '../types';
 
 /** Brief fields the "Your version" screen edits. */
-export type BriefEdit = Partial<Pick<Brief, 'hook' | 'script' | 'shot_list' | 'caption' | 'cta' | 'hashtags'>>;
+export type BriefEdit = BriefPatch;
+
+/** How long after the last keystroke an edit is saved. */
+const SAVE_AFTER_MS = 700;
 
 /** shot_list is jsonb; treat anything that isn't a string array as empty. */
 export function shotsOf(brief: Brief): string[] {
@@ -37,81 +45,132 @@ export function briefAsText(brief: Brief) {
     .join('\n\n');
 }
 
-export function briefFromAnalysis(clip: Clip, analysis: TypedAnalysis, brandId: string): Brief {
-  const now = new Date().toISOString();
-  return {
-    id: `local-brief-${Date.now().toString(36)}`,
-    owner_id: clip.owner_id,
-    clip_id: clip.id,
-    brand_id: brandId,
-    analysis_id: analysis.id,
-    hook: analysis.payload.hook,
-    script: null,
-    shot_list: analysis.payload.shotBeats,
-    caption: null,
-    cta: analysis.payload.cta || null,
-    hashtags: [],
-    status: 'draft',
-    payload: null,
-    prompt_version: null,
-    model_version: null,
-    created_at: now,
-    updated_at: now,
-  };
+/** The newest brief for each clip -- the current version after any regenerates. */
+export function latestPerClip(briefs: Brief[]): Brief[] {
+  const newest = new Map<string, Brief>();
+  for (const b of briefs) {
+    const seen = newest.get(b.clip_id);
+    if (!seen || Date.parse(b.created_at) > Date.parse(seen.created_at)) newest.set(b.clip_id, b);
+  }
+  return [...newest.values()].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 
 export function useBriefs() {
-  const [briefs, setBriefs] = useState<Brief[]>([]);
+  const [all, setAll] = useState<Brief[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** Clip ids being adapted, and brief ids being regenerated, right now. */
+  const [working, setWorking] = useState<Set<string>>(new Set());
+  const pending = useRef(new Map<string, { patch: BriefPatch; timer: ReturnType<typeof setTimeout> }>());
+
+  const refresh = useCallback(async () => {
+    try {
+      setAll(await fetchBriefs());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load your briefs.');
+    }
+  }, []);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => (raw ? (JSON.parse(raw) as Brief[]) : []))
-      .catch(() => [] as Brief[])
-      .then((stored) => {
-        setBriefs(stored);
-        setLoaded(true);
-      });
-  }, []);
+    let active = true;
+    refresh().finally(() => {
+      if (active) setLoaded(true);
+    });
+    return () => {
+      active = false;
+      // Write anything still waiting rather than drop it.
+      for (const [id, { patch, timer }] of pending.current) {
+        clearTimeout(timer);
+        updateBrief(id, patch).catch(() => {});
+      }
+      pending.current.clear();
+    };
+  }, [refresh]);
 
-  const update = useCallback((fn: (current: Brief[]) => Brief[]) => {
-    setBriefs((current) => {
-      const next = fn(current);
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+  const mark = (key: string, on: boolean) =>
+    setWorking((current) => {
+      const next = new Set(current);
+      if (on) next.add(key);
+      else next.delete(key);
       return next;
     });
+
+  /** Change a brief on screen now; save it to the database shortly after. */
+  const edit = useCallback((id: string, patch: BriefPatch) => {
+    setAll((current) =>
+      current.map((b) => (b.id === id ? { ...b, ...patch, updated_at: new Date().toISOString() } : b))
+    );
+    const waiting = pending.current.get(id);
+    if (waiting) clearTimeout(waiting.timer);
+    const merged = { ...waiting?.patch, ...patch };
+    const timer = setTimeout(async () => {
+      pending.current.delete(id);
+      try {
+        const saved = await updateBrief(id, merged);
+        // Pick up what the database decided (status draft -> edited, updated_at).
+        setAll((current) =>
+          current.map((b) => (b.id === id ? { ...b, status: saved.status, updated_at: saved.updated_at } : b))
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not save your brief.');
+      }
+    }, SAVE_AFTER_MS);
+    pending.current.set(id, { patch: merged, timer });
   }, []);
 
-  const add = useCallback((brief: Brief) => update((current) => [brief, ...current]), [update]);
-
-  const edit = useCallback(
-    (id: string, patch: BriefEdit) =>
-      update((current) =>
-        current.map((b) =>
-          b.id === id
-            ? {
-                ...b,
-                ...patch,
-                status: b.status === 'draft' ? 'edited' : b.status,
-                updated_at: new Date().toISOString(),
-              }
-            : b
-        )
-      ),
-    [update]
+  /** Write a brief for a clip with the AI. Resolves to the new brief's id, or null if it failed. */
+  const generate = useCallback(
+    async (clipId: string, brandId: string): Promise<string | null> => {
+      mark(clipId, true);
+      try {
+        const id = await requestBrief(clipId, brandId);
+        await refresh();
+        return id;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not write your brief.');
+        return null;
+      } finally {
+        mark(clipId, false);
+      }
+    },
+    [refresh]
   );
 
-  /** Adds the mock briefs that belong to the sample clips. */
-  const loadSamples = useCallback(
-    () =>
-      update((current) => [
-        ...current.filter((b) => !mockBriefs.some((m) => m.id === b.id)),
-        ...mockBriefs,
-      ]),
-    [update]
+  /** Ask the AI for a new version. Resolves to the new brief's id, or null if it failed. */
+  const regenerate = useCallback(
+    async (briefId: string): Promise<string | null> => {
+      mark(briefId, true);
+      try {
+        const id = await requestRegenerate(briefId);
+        await refresh();
+        return id;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not rewrite your brief.');
+        return null;
+      } finally {
+        mark(briefId, false);
+      }
+    },
+    [refresh]
   );
 
-  return { briefs, loaded, add, edit, loadSamples };
+  const latest = useMemo(() => latestPerClip(all), [all]);
+
+  return {
+    /** One brief per clip: the newest. This is what the screens list. */
+    briefs: latest,
+    /** Every version, including ones replaced by Regenerate. */
+    all,
+    loaded,
+    error,
+    clearError: () => setError(null),
+    /** Is this clip being adapted, or this brief being regenerated? */
+    isWorking: (key: string) => working.has(key),
+    refresh,
+    edit,
+    generate,
+    regenerate,
+  };
 }
 
 export type Briefs = ReturnType<typeof useBriefs>;

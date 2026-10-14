@@ -15,7 +15,7 @@ import {
   type GestureResponderEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { BackButton, Chip, Eyebrow, PrimaryButton, StepProgress } from '../components/ui';
+import { AddOwnInput, BackButton, Chip, Eyebrow, PrimaryButton, StepProgress, withTone } from '../components/ui';
 import { BrandSetup, TONES, emptyBrandSetup } from '../data/brandSetup';
 import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { FunnelStage } from '../types';
@@ -153,11 +153,13 @@ function StepSound({
   }
 
   const latest = setup.tones[setup.tones.length - 1];
+  // The built-in tones, then any the user typed themselves.
+  const custom = setup.tones.filter((t) => !TONES.includes(t));
 
   return (
     <>
       <View style={styles.chipWrap}>
-        {TONES.map((tone) => (
+        {[...TONES, ...custom].map((tone) => (
           <Chip
             key={tone}
             label={tone}
@@ -166,10 +168,17 @@ function StepSound({
           />
         ))}
       </View>
+      <AddOwnInput
+        placeholder="Add your own, e.g. Sarcastic"
+        accessibilityLabel="Add your own tone"
+        onAdd={(text) => update({ tones: withTone(setup.tones, text) })}
+      />
       <View style={[styles.note, { backgroundColor: colors.lilac, gap: 6 }]}>
         <Eyebrow color={colors.onPastelBody}>So a hook becomes</Eyebrow>
         <Text style={styles.previewHook}>
-          {latest ? TONE_HOOKS[latest] : 'Pick a tone to see an example.'}
+          {latest
+            ? (TONE_HOOKS[latest] ?? `Every hook gets written in a “${latest}” voice.`)
+            : 'Pick a tone to see an example.'}
         </Text>
         <Text style={styles.previewHint}>Updates live as you change the picks above.</Text>
       </View>

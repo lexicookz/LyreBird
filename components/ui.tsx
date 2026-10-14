@@ -1,16 +1,19 @@
 // components/ui.tsx
 // Small building blocks shared across the redesigned screens. Measurements are
 // from the Figma onboarding frames (Branding form 1-4).
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { fonts, radius, Colors, useStyles, useTheme } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Appear, ScalePressable } from './motion';
+import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 
 /** Full-width dark button ("Continue", "Finish setup"). */
 export function PrimaryButton({
@@ -26,7 +29,7 @@ export function PrimaryButton({
 }) {
   const styles = useStyles(makeStyles);
   return (
-    <Pressable
+    <ScalePressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
@@ -39,7 +42,7 @@ export function PrimaryButton({
       ]}
     >
       <Text style={styles.primaryLabel}>{label}</Text>
-    </Pressable>
+    </ScalePressable>
   );
 }
 
@@ -47,7 +50,7 @@ export function PrimaryButton({
 export function BackButton({ onPress }: { onPress: () => void }) {
   const styles = useStyles(makeStyles);
   return (
-    <Pressable
+    <ScalePressable
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
@@ -55,7 +58,7 @@ export function BackButton({ onPress }: { onPress: () => void }) {
       style={({ pressed }) => [styles.back, pressed && styles.pressed]}
     >
       <View style={styles.backChevron} />
-    </Pressable>
+    </ScalePressable>
   );
 }
 
@@ -84,7 +87,7 @@ export function Chip({
 }) {
   const styles = useStyles(makeStyles);
   return (
-    <Pressable
+    <ScalePressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
@@ -93,7 +96,7 @@ export function Chip({
       <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
         {label}
       </Text>
-    </Pressable>
+    </ScalePressable>
   );
 }
 
@@ -135,7 +138,7 @@ export function BrandMark({
   );
   if (!onPress) return <View style={style}>{letter}</View>;
   return (
-    <Pressable
+    <ScalePressable
       onPress={onPress}
       hitSlop={6}
       accessibilityRole="button"
@@ -143,7 +146,89 @@ export function BrandMark({
       style={({ pressed }) => [style, pressed && styles.pressed]}
     >
       {letter}
-    </Pressable>
+    </ScalePressable>
+  );
+}
+
+/**
+ * Turn what someone typed into a tone label: trimmed, single-spaced, first
+ * letter capitalised, at most 24 characters. Empty if there's nothing to add.
+ */
+export function cleanTone(text: string): string {
+  const t = text.trim().replace(/\s+/g, ' ').slice(0, 24);
+  return t ? t[0].toUpperCase() + t.slice(1) : '';
+}
+
+/** Adds `tone` unless it's empty or already there (ignoring case). */
+export function withTone(tones: string[], tone: string): string[] {
+  const t = cleanTone(tone);
+  if (!t || tones.some((x) => x.toLowerCase() === t.toLowerCase())) return tones;
+  return [...tones, t];
+}
+
+/** A small "type your own and press return" field, for custom tones. */
+export function AddOwnInput({
+  placeholder,
+  onAdd,
+  accessibilityLabel,
+}: {
+  placeholder: string;
+  onAdd: (text: string) => void;
+  accessibilityLabel: string;
+}) {
+  const { colors } = useTheme();
+  const styles = useStyles(makeStyles);
+  const [text, setText] = useState('');
+  function submit() {
+    if (text.trim()) onAdd(text);
+    setText('');
+  }
+  return (
+    <View style={styles.addOwn}>
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        onSubmitEditing={submit}
+        blurOnSubmit={false}
+        returnKeyType="done"
+        maxLength={24}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textPlaceholder}
+        accessibilityLabel={accessibilityLabel}
+        style={styles.addOwnInput}
+      />
+      {!!text.trim() && (
+        <Pressable onPress={submit} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add">
+          <Text style={styles.addOwnButton}>Add</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/**
+ * A dismissible message pinned near the top of the screen, for things that
+ * went wrong in the background (a save that didn't reach Supabase, a failed
+ * upload). Render it last so it sits above the screen.
+ */
+export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  const styles = useStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  return (
+    <Appear from="top" style={[styles.errorBanner, { top: insets.top + 8 }]}>
+      <View style={styles.errorRow} accessibilityRole="alert" accessibilityLiveRegion="assertive">
+        <Text style={styles.errorText}>{message}</Text>
+        <Pressable
+          onPress={onDismiss}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss message"
+          style={styles.errorClose}
+        >
+          <Text style={styles.errorCloseText}>×</Text>
+        </Pressable>
+      </View>
+    </Appear>
   );
 }
 
@@ -163,6 +248,65 @@ export function StepProgress({ current, total }: { current: number; total: numbe
 }
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
+  addOwn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    borderWidth: 0.8,
+    borderStyle: 'dashed',
+    borderColor: colors.hairlineStrong,
+  },
+  addOwnInput: {
+    flex: 1,
+    height: 40,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  addOwnButton: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: 12.5,
+    color: colors.textLabel,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  errorBanner: {
+    position: 'absolute',
+    left: pagePadding,
+    right: pagePadding,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: radius.card,
+    backgroundColor: colors.pink,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 100,
+  },
+  errorText: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.onPastel,
+  },
+  errorClose: {
+    width: 20,
+    alignItems: 'center',
+  },
+  errorCloseText: {
+    fontFamily: fonts.body,
+    fontSize: 18,
+    lineHeight: 18,
+    color: colors.onPastelBody,
+  },
   pressed: {
     opacity: 0.85,
   },

@@ -54,6 +54,28 @@ describe('BrandSetupScreen', () => {
     expect(await findByText('“I bought 11 refill brands. Nine leaked.”')).toBeTruthy();
   });
 
+  test('you can add your own tone, and it is saved with the others', async () => {
+    const { getByText, getByLabelText, findByText, getAllByText, onDone } = await setup();
+
+    await fireEvent.changeText(getByLabelText('Brand name'), 'Nima Studio');
+    await fireEvent.press(getByText('Continue'));
+
+    const input = getByLabelText('Add your own tone');
+    await fireEvent.changeText(input, '  gen z   energy ');
+    await fireEvent(input, 'submitEditing');
+
+    expect(await findByText('Gen z energy')).toBeTruthy();
+    expect(getByText('Every hook gets written in a “Gen z energy” voice.')).toBeTruthy();
+
+    // The same tone again, in another case, isn't added twice.
+    await fireEvent.changeText(input, 'GEN Z ENERGY');
+    await fireEvent(input, 'submitEditing');
+    expect(getAllByText('Gen z energy')).toHaveLength(1);
+
+    await fireEvent.press(getByText('Skip for now'));
+    expect(onDone).toHaveBeenCalledWith(expect.objectContaining({ tones: ['Gen z energy'] }));
+  });
+
   test('words to avoid can be added by typing and removed', async () => {
     const { getByText, getByLabelText, findByText, queryByText } = await setup();
 

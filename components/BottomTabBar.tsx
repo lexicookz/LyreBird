@@ -3,8 +3,10 @@
 // It sits on top of the screen content, so App.tsx reserves TAB_BAR_SPACE below
 // the content to keep the last row of each screen visible.
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScalePressable } from './motion';
+import { tap } from '../lib/haptics';
 import { fonts, Colors, useStyles, useTheme } from '../theme';
 
 export type TabKey = 'library' | 'search' | 'briefs' | 'calendar';
@@ -103,10 +105,13 @@ export default function BottomTabBar({
     const isActive = tab.key === activeTab;
     const color = isActive ? colors.cream : colors.creamMuted;
     return (
-      <Pressable
+      <ScalePressable
         key={tab.key}
         style={styles.tab}
-        onPress={() => onChangeTab(tab.key)}
+        onPress={() => {
+          if (!isActive) tap();
+          onChangeTab(tab.key);
+        }}
         accessibilityRole="button"
         accessibilityLabel={tab.label}
         accessibilityState={{ selected: isActive }}
@@ -114,7 +119,7 @@ export default function BottomTabBar({
       >
         <tab.Icon color={color} />
         <Text style={[styles.label, { color }]}>{tab.label}</Text>
-      </Pressable>
+      </ScalePressable>
     );
   }
 
@@ -127,9 +132,13 @@ export default function BottomTabBar({
         {renderTab(TABS[0])}
         {renderTab(TABS[1])}
         <View style={styles.fabSlot}>
-          <Pressable
+          <ScalePressable
             style={styles.fab}
-            onPress={onPressAdd}
+            onPress={() => {
+              tap();
+              onPressAdd();
+            }}
+            pressedScale={0.92}
             accessibilityRole="button"
             accessibilityLabel={addOpen ? 'Close add a video' : 'Add videos'}
           >
@@ -137,7 +146,7 @@ export default function BottomTabBar({
               <View style={styles.plusH} />
               <View style={styles.plusV} />
             </View>
-          </Pressable>
+          </ScalePressable>
         </View>
         {renderTab(TABS[2])}
         {renderTab(TABS[3])}
