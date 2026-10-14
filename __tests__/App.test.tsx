@@ -700,7 +700,8 @@ describe('App', () => {
     await fireEvent.press(await findByLabelText('Use hook: Alt hook two'));
 
     await waitFor(() => expect(getByLabelText('Hook line').props.defaultValue).toBe('Alt hook two'));
-    await waitFor(() => expect(briefsApi.updateBrief).toHaveBeenCalledWith(id, { hook: 'Alt hook two' }));
+    // Saves are debounced (700ms), so allow longer than waitFor's 1s default on a slow CI runner.
+    await waitFor(() => expect(briefsApi.updateBrief).toHaveBeenCalledWith(id, { hook: 'Alt hook two' }), { timeout: 3000 });
     // Nothing else about the brief changed, and no new brief was written.
     expect(briefsApi.__rows).toHaveLength(1);
     expect(briefsApi.__rows[0].script).toBe('AI script');
