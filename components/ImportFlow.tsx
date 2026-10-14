@@ -9,7 +9,7 @@ import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native
 import * as ImagePicker from 'expo-image-picker';
 import BottomSheet from './BottomSheet';
 import { PrimaryButton } from './ui';
-import { MAX_CLIP_SECONDS } from '../data/library';
+import { MAX_CLIP_SECONDS, MAX_UPLOAD_BYTES } from '../data/library';
 import { fonts, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import { ImagePickerAsset } from 'expo-image-picker';
 
@@ -25,17 +25,33 @@ export function useVideoImport() {
       orderedSelection: true,
       selectionLimit: 0,
       quality: 1,
+      // iPhone only: hand over a 960x540 copy instead of the original, which
+      // can be far over the upload limit. The worker downscales to 480p
+      // anyway, so nothing the analysis or playback uses is lost. Android's
+      // picker has no equivalent; the size check below covers it.
+      videoExportPreset: ImagePicker.VideoExportPreset.H264_960x540,
     });
     if (result.canceled) return;
 
-    const fits = result.assets.filter(
-      (a) => !a.duration || a.duration / 1000 <= MAX_CLIP_SECONDS
-    );
-    const skipped = result.assets.length - fits.length;
-    if (skipped > 0) {
+    const tooLong = (a: ImagePicker.ImagePickerAsset) =>
+      !!a.duration && a.duration / 1000 > MAX_CLIP_SECONDS;
+    const tooBig = (a: ImagePicker.ImagePickerAsset) =>
+      !tooLong(a) && !!a.fileSize && a.fileSize > MAX_UPLOAD_BYTES;
+    const fits = result.assets.filter((a) => !tooLong(a) && !tooBig(a));
+
+    const longCount = result.assets.filter(tooLong).length;
+    const bigCount = result.assets.filter(tooBig).length;
+    const reasons = [
+      longCount > 0 &&
+        `${longCount} ${longCount === 1 ? 'was' : 'were'} over ${MAX_CLIP_SECONDS} seconds`,
+      bigCount > 0 &&
+        `${bigCount} ${bigCount === 1 ? 'was' : 'were'} over ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB`,
+    ].filter(Boolean);
+    if (reasons.length > 0) {
+      const skipped = longCount + bigCount;
       Alert.alert(
-        'Some videos were too long',
-        `${skipped} video${skipped === 1 ? ' was' : 's were'} over ${MAX_CLIP_SECONDS} seconds and ${skipped === 1 ? 'was' : 'were'} left out.`
+        skipped === 1 ? 'One video was left out' : `${skipped} videos were left out`,
+        `${reasons.join(' and ')}. Try a shorter clip.`
       );
     }
     if (fits.length > 0) setPending(fits);

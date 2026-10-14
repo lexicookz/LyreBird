@@ -40,6 +40,13 @@ const EMPTY: LibraryState = { clips: [], analyses: [], lastImportCount: null };
 
 /** Clips longer than this are skipped at import. */
 export const MAX_CLIP_SECONDS = 90;
+/**
+ * The largest file Supabase Storage accepts on the free plan (its global
+ * per-file limit). Anything bigger fails with "The object exceeded the maximum
+ * allowed size", so the picker leaves it out up front with a clearer message.
+ * Change this if the project moves to a plan with a higher limit.
+ */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 // Sample analyses handed out by the simulator, in order: three written for it
 // (one per funnel stage), then the three mock analyses. The new ones come first

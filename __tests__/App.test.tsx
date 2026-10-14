@@ -220,6 +220,7 @@ jest.mock('../lib/clips', () => {
 });
 
 jest.mock('expo-image-picker', () => ({
+  VideoExportPreset: { H264_960x540: 5 },
   getMediaLibraryPermissionsAsync: jest.fn(async () => ({
     granted: false,
     canAskAgain: true,
@@ -232,6 +233,8 @@ jest.mock('expo-image-picker', () => ({
       { uri: 'file:///a.mov', fileName: 'a.mov', duration: 31_000, width: 1080, height: 1920 },
       { uri: 'file:///b.mov', fileName: 'b.mov', duration: 44_000, width: 1080, height: 1920 },
       { uri: 'file:///c.mov', fileName: 'c.mov', duration: 120_000, width: 1080, height: 1920 },
+      // Short enough, but over the 50 MB upload limit.
+      { uri: 'file:///d.mov', fileName: 'd.mov', duration: 20_000, fileSize: 80 * 1024 * 1024, width: 1080, height: 1920 },
     ],
   })),
 }));
@@ -439,8 +442,16 @@ describe('App', () => {
     await fireEvent.press(getByText('Continue'));
     expect(ImagePicker.requestMediaLibraryPermissionsAsync).toHaveBeenCalled();
 
-    // The 2-minute video is over the 90-second cap and is left out.
+    // The 2-minute video is over the 90-second cap and the 80 MB one over the
+    // upload limit; both are left out, and the picker asked iOS for a smaller copy.
     expect(await findByText('2 videos selected')).toBeTruthy();
+    expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ videoExportPreset: 5 })
+    );
+    expect(Alert.alert).toHaveBeenCalledWith(
+      '2 videos were left out',
+      '1 was over 90 seconds and 1 was over 50 MB. Try a shorter clip.'
+    );
     await fireEvent.press(getByText('Import'));
 
     expect(await findByText('Analysing 2 new clips')).toBeTruthy();
