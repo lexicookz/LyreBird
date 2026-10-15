@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.scroll import Boundary, segments
+import app.scroll as scroll
 
 
 def at(*times: float) -> list[Boundary]:
@@ -83,3 +84,122 @@ def test_total_span_always_equals_the_duration(duration):
         return
     covered = sum(end - start for start, end in spans)
     assert covered == pytest.approx(duration)
+
+
+def test_find_boundaries_keeps_only_candidates_that_pass_travel_gate(
+    monkeypatch,
+    tmp_path,
+):
+    video = tmp_path / "recording.mp4"
+
+    monkeypatch.setattr(
+        scroll,
+        "_candidates",
+        lambda _path: (
+            [
+                (5.0, 20.0),
+                (10.0, 30.0),
+                (15.0, 40.0),
+            ],
+            20.0,
+        ),
+    )
+
+    travel_by_time = {
+        5.0: scroll.TRAVEL_GATE - 0.01,
+        10.0: scroll.TRAVEL_GATE,
+        15.0: scroll.TRAVEL_GATE + 0.20,
+    }
+    monkeypatch.setattr(
+        scroll,
+        "_travel",
+        lambda _path, at: travel_by_time[at],
+    )
+
+    assert scroll.find_boundaries(video) == [
+        Boundary(
+            time=10.0,
+            peak_diff=30.0,
+            travel=scroll.TRAVEL_GATE,
+        ),
+        Boundary(
+            time=15.0,
+            peak_diff=40.0,
+            travel=scroll.TRAVEL_GATE + 0.20,
+        ),
+    ]
+
+def test_downscale_resizes_converts_to_grayscale_and_float32():
+    frame = scroll.np.zeros((100, 200, 3), dtype=scroll.np.uint8)
+
+    result = scroll._downscale(frame)
+
+    assert result.shape == (32, 64)
+    assert result.ndim == 2
+    assert result.dtype == scroll.np.float32
+
+def test_candidates_rejects_video_that_cannot_be_opened(tmp_path):
+    missing_video = tmp_path / "missing.mp4"
+
+    with pytest.raises(ValueError, match="could not open"):
+        scroll._candidates(missing_video)
+
+
+def test_travel_rejects_video_that_cannot_be_opened(tmp_path):
+    missing_video = tmp_path / "missing.mp4"
+
+    with pytest.raises(ValueError, match="could not open"):
+        scroll._travel(missing_video, 5.0)
+
+class EmptyVideoCapture:
+    def __init__(self):
+        self.released = False
+
+    def isOpened(self):
+        return True
+
+    def read(self):
+        return False, None
+
+    def get(self, _property):
+        return 0.0
+
+    def set(self, _property, _value):
+        return True
+
+    def release(self):
+        self.released = True
+
+
+def test_candidates_returns_empty_result_when_video_has_no_frames(
+    monkeypatch,
+    tmp_path,
+):
+    capture = EmptyVideoCapture()
+    monkeypatch.setattr(
+        scroll.cv2,
+        "VideoCapture",
+        lambda _path: capture,
+    )
+
+    result = scroll._candidates(tmp_path / "empty.mp4")
+
+    assert result == ([], 0.0)
+    assert capture.released is True
+
+
+def test_travel_returns_zero_when_video_has_no_frames(
+    monkeypatch,
+    tmp_path,
+):
+    capture = EmptyVideoCapture()
+    monkeypatch.setattr(
+        scroll.cv2,
+        "VideoCapture",
+        lambda _path: capture,
+    )
+
+    result = scroll._travel(tmp_path / "empty.mp4", 5.0)
+
+    assert result == 0.0
+    assert capture.released is True
