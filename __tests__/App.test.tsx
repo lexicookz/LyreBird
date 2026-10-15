@@ -756,7 +756,9 @@ describe('App', () => {
     await fireEvent.press(getAllByText('Posted')[0]);
     await fireEvent.press(getByText('Save schedule'));
 
-    expect(queryByText('Schedule brief')).toBeNull();
+    await waitFor(() => {
+      expect(queryByText('Schedule brief')).toBeNull();
+    });
     expect(getByText('Posted')).toBeTruthy();
     const saved = require('../lib/calendar').__rows.map((r: any) => ({ briefId: r.brief_id, date: r.scheduled_for, status: r.status }));
     expect(saved).toContainEqual(
