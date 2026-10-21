@@ -79,6 +79,19 @@ def _one(client, table: str, row_id: UUID, label: str) -> dict:
         raise HTTPException(status_code=404, detail=f"No {label} with id {row_id}")
     return rows[0]
 
+def _source_clip_id(brief: dict) -> UUID:
+    """Return the source clip id, or explain why AI actions are unavailable."""
+    clip_id = brief.get("clip_id")
+    if not clip_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This brief's source video was deleted, "
+                "so AI generation is no longer available."
+            ),
+        )
+    return UUID(str(clip_id))
+
 
 def _analysis_and_profile(client, clip: dict, brand: dict) -> tuple[dict, BrandProfile]:
     """The clip's latest analysis and the brand as a profile: what every
@@ -265,7 +278,7 @@ def regenerate_brief(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     existing = _one(client, "briefs", brief_id, "brief")
-    clip = _one(client, "clips", UUID(existing["clip_id"]), "clip")
+    clip = _one(client, "clips", _source_clip_id(existing), "clip")
     brand = _one(client, "brands", UUID(existing["brand_id"]), "brand")
 
     # Same check as create: the worker bypasses RLS, and a brief whose clip
@@ -288,7 +301,7 @@ def brief_alternates(brief_id: UUID) -> AlternatesResponse:
     client = get_client()
 
     existing = _one(client, "briefs", brief_id, "brief")
-    clip = _one(client, "clips", UUID(existing["clip_id"]), "clip")
+    clip = _one(client, "clips", _source_clip_id(existing), "clip")
     brand = _one(client, "brands", UUID(existing["brand_id"]), "brand")
 
     # The worker bypasses RLS, so the owner check is ours to make.

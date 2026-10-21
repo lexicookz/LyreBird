@@ -172,7 +172,7 @@ export default function CalendarScreen({
   items: CalendarItem[];
   briefs: Brief[];
   /** For each entry's video length. */
-  clipFor: (clipId: string) => Clip | undefined;
+  clipFor: (clipId: string | null | undefined) => Clip | undefined;
   brandName?: string;
   brandColor?: string;
   onOpenBrandProfile: () => void;

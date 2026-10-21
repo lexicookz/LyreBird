@@ -125,7 +125,7 @@ class Brief(_Base):
 
     id: UUID
     owner_id: UUID
-    clip_id: UUID
+    clip_id: UUID | None = None
     brand_id: UUID
     analysis_id: UUID | None = None
     hook: str | None = None

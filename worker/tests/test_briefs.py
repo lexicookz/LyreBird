@@ -219,6 +219,21 @@ def test_regenerate_keeps_the_other_two_failures_distinct(monkeypatch, exception
 
     assert response.status_code == expected
 
+def test_regenerate_refuses_brief_whose_source_video_was_deleted(monkeypatch):
+    tables = rows()
+    tables["briefs"][0]["clip_id"] = None
+    monkeypatch.setattr(briefs, "get_client", lambda: FakeClient(**tables))
+
+    response = client.post(f"/briefs/{BRIEF_ID}/regenerate")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": (
+            "This brief's source video was deleted, "
+            "so AI generation is no longer available."
+        )
+    }
+
 
 # ---------- POST /briefs/{brief_id}/alternates ----------
 
@@ -288,3 +303,18 @@ def test_alternates_returns_429_with_retry_after_when_the_quota_is_spent(monkeyp
 
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "30"
+
+def test_alternates_refuses_brief_whose_source_video_was_deleted(monkeypatch):
+    tables = rows()
+    tables["briefs"][0]["clip_id"] = None
+    monkeypatch.setattr(briefs, "get_client", lambda: FakeClient(**tables))
+
+    response = client.post(f"/briefs/{BRIEF_ID}/alternates")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": (
+            "This brief's source video was deleted, "
+            "so AI generation is no longer available."
+        )
+    }

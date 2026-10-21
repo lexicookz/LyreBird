@@ -145,7 +145,7 @@ export type Database = {
           analysis_id: string | null
           brand_id: string
           caption: string | null
-          clip_id: string
+          clip_id: string | null
           created_at: string
           cta: string | null
           hashtags: string[]
@@ -164,7 +164,7 @@ export type Database = {
           analysis_id?: string | null
           brand_id: string
           caption?: string | null
-          clip_id: string
+          clip_id?: string | null
           created_at?: string
           cta?: string | null
           hashtags?: string[]
@@ -183,7 +183,7 @@ export type Database = {
           analysis_id?: string | null
           brand_id?: string
           caption?: string | null
-          clip_id?: string
+          clip_id?: string | null
           created_at?: string
           cta?: string | null
           hashtags?: string[]

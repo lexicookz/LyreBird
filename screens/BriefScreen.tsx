@@ -53,7 +53,7 @@ export default function BriefScreen({
   onBack: () => void;
   onSchedule: () => void;
   /** Ask the AI for a fresh version. The current one is kept. */
-  onRegenerate: () => void;
+  onRegenerate?: () => void;
   /** The AI is rewriting this brief right now. */
   regenerating?: boolean;
 }) {
@@ -111,12 +111,24 @@ export default function BriefScreen({
             <View style={styles.pillRow}>
               <Pressable
                 onPress={onRegenerate}
-                disabled={regenerating}
-                style={[styles.framePill, regenerating && { opacity: 0.7 }]}
+                disabled={regenerating || !onRegenerate}
+                style={[
+                  styles.framePill,
+                  (regenerating || !onRegenerate) && { opacity: 0.7 },
+                ]}
                 accessibilityRole="button"
-                accessibilityState={{ busy: regenerating, disabled: regenerating }}
+                accessibilityState={{
+                  busy: regenerating,
+                  disabled: regenerating || !onRegenerate,
+                }}
               >
-                <Text style={styles.framePillText}>{regenerating ? 'Rewriting…' : 'Regenerate'}</Text>
+                <Text style={styles.framePillText}>
+                  {!onRegenerate
+                    ? 'Cannot regenerate'
+                    : regenerating
+                      ? 'Rewriting…'
+                      : 'Regenerate'}
+                </Text>
               </Pressable>
               <Pressable
                 onPress={() => setShowAlternates(true)}
