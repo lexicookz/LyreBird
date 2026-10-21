@@ -112,7 +112,7 @@ class Analysis(_Base):
 
     id: UUID
     owner_id: UUID
-    clip_id: UUID
+    clip_id: UUID | None = None
     payload: dict[str, Any]
     model_version: str
     prompt_version: str
