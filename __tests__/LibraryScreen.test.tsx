@@ -12,7 +12,11 @@ async function renderLibrary(overrides: Partial<React.ComponentProps<typeof Libr
   const props: React.ComponentProps<typeof LibraryScreen> = {
     clips: sample.clips,
     analyses: sample.analyses,
-    briefClipIds: new Set(mockBriefs.map((b) => b.clip_id)),
+    briefClipIds: new Set(
+      mockBriefs
+        .map((brief) => brief.clip_id)
+        .filter((clipId): clipId is string => clipId !== null)
+    ),
     lastImportCount: 3,
     now: NOW,
     onSelectVideo: jest.fn(),

@@ -8,7 +8,7 @@
 //
 // Edits are applied on screen straight away and written to the database a
 // moment after the user stops typing, so a keystroke isn't a request.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BriefPatch,
   fetchBriefs,
@@ -46,13 +46,28 @@ export function briefAsText(brief: Brief) {
 }
 
 /** The newest brief for each clip -- the current version after any regenerates. */
+/** The newest brief for each clip -- the current version after any regenerates.
+ * Briefs whose source clip was deleted are retained as independent records.
+ */
 export function latestPerClip(briefs: Brief[]): Brief[] {
   const newest = new Map<string, Brief>();
-  for (const b of briefs) {
-    const seen = newest.get(b.clip_id);
-    if (!seen || Date.parse(b.created_at) > Date.parse(seen.created_at)) newest.set(b.clip_id, b);
+  const withoutClip: Brief[] = [];
+
+  for (const brief of briefs) {
+    if (!brief.clip_id) {
+      withoutClip.push(brief);
+      continue;
+    }
+
+    const seen = newest.get(brief.clip_id);
+    if (!seen || Date.parse(brief.created_at) > Date.parse(seen.created_at)) {
+      newest.set(brief.clip_id, brief);
+    }
   }
-  return [...newest.values()].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+
+  return [...newest.values(), ...withoutClip].sort(
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)
+  );
 }
 
 export function useBriefs() {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { ActivityIndicator, View, StyleSheet, Share } from 'react-native';
 import LibraryScreen, { confirmDeleteClip } from './screens/LibraryScreen';
 import BriefsScreen from './screens/BriefsScreen';
@@ -151,7 +151,9 @@ function AppContent() {
 
   // ---------- lookups across the stores ----------
 
-  function clipFor(clipId: string): Clip | undefined {
+  function clipFor(clipId: string | null | undefined): Clip | undefined {
+    if (!clipId) return undefined;
+
     return (
       library.clips.find((c) => c.id === clipId) ??
       pickedClips.find((p) => p.clip.id === clipId)?.clip ??
@@ -171,7 +173,15 @@ function AppContent() {
     return stageForBriefId(brief.id);
   }
 
-  const briefClipIds = new Set(briefs.briefs.map((b) => b.clip_id));
+  const briefClipIds = useMemo<Set<string>>(
+    () =>
+      new Set(
+        briefs.all
+          .map((brief) => brief.clip_id)
+          .filter((clipId): clipId is string => clipId !== null)
+      ),
+    [briefs.all]
+  );
   /** Background of the brand initial shown in headers and Settings. */
   const brandColor = colors[brandColorOf(brandSetup)];
 
@@ -255,6 +265,7 @@ function AppContent() {
    * the calendar, the new one takes its place there.
    */
   async function handleRegenerate(brief: Brief) {
+    if (!brief.clip_id) return;
     const newId = await briefs.regenerate(brief.id);
     if (!newId) return;
     success();
@@ -420,7 +431,11 @@ function AppContent() {
             onEdit={(patch) => briefs.edit(openBrief.id, patch)}
             onBack={closePushed}
             onSchedule={() => setSchedulingBriefId(openBrief.id)}
-            onRegenerate={() => handleRegenerate(openBrief)}
+            onRegenerate={
+              openBrief.clip_id
+                ? () => handleRegenerate(openBrief)
+                : undefined
+            }
             regenerating={briefs.isWorking(openBrief.id)}
           />
         </Appear>
