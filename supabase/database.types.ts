@@ -41,7 +41,7 @@ export type Database = {
     Tables: {
       analyses: {
         Row: {
-          clip_id: string
+          clip_id: string | null
           created_at: string
           id: string
           model_version: string
@@ -50,7 +50,7 @@ export type Database = {
           prompt_version: string
         }
         Insert: {
-          clip_id: string
+          clip_id: string | null
           created_at?: string
           id?: string
           model_version: string
@@ -59,7 +59,7 @@ export type Database = {
           prompt_version: string
         }
         Update: {
-          clip_id?: string
+          clip_id?: string | null
           created_at?: string
           id?: string
           model_version?: string
