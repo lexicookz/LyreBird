@@ -13,6 +13,7 @@ import { File } from 'expo-file-system';
 import { supabase } from './supabase';
 import { WORKER_URL } from './worker';
 import type { Analysis, Clip } from '../types';
+import { Tag } from '../types/tag';
 
 export const CLIPS_BUCKET = 'clips';
 /** Where /prepare puts each clip's thumbnail. Private, like the clips. */
@@ -34,7 +35,7 @@ export type LibraryQuery = {
    */
   search?: string;
   /** Clips carrying every one of these tags. Empty or absent means no filter. */
-  tags?: string[];
+  tags?: Tag[];
   sort?: LibrarySort;
   /** Which page, zero-based. */
   page?: number;
@@ -182,11 +183,11 @@ export async function signedVideoUrl(storagePath: string): Promise<string | null
 }
 
 /** Every tag in use, for the filter row. */
-export async function fetchTags(): Promise<string[]> {
+export async function fetchTags(): Promise<Tag[]> {
   const { data, error } = await supabase.from('clips').select('tags');
   if (error) throw new Error(`Could not load tags: ${error.message}`);
-  const seen = new Set<string>();
-  for (const row of data ?? []) for (const tag of row.tags ?? []) seen.add(tag);
+  const seen = new Set<Tag>();
+  for (const row of data ?? []) for (const tag of row.tags ?? []) seen.add(tag as Tag);
   return [...seen].sort();
 }
 
