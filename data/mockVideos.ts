@@ -167,6 +167,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       cta: 'Follow for more morning tips',
       format: 'talking_head',
       funnelStage: 'TOFU',
+      tags: []
     },
   },
   {
@@ -190,6 +191,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       cta: 'Comment "EMAIL" for my swipe file',
       format: 'voiceover',
       funnelStage: 'MOFU',
+      tags: []
     },
   },
   {
@@ -213,6 +215,7 @@ export const mockAnalyses: TypedAnalysis[] = [
       cta: 'Save this for your next shoot',
       format: 'talking_head',
       funnelStage: 'BOFU',
+      tags: []
     },
   },
 ];

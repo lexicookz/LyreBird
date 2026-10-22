@@ -99,7 +99,7 @@ export type AnalysisPayload = {
   format: VideoFormat;
   funnelStage: FunnelStage;
   formatTag?: FormatTag | null;
-  tags: ContentTag | null;
+  tags: ContentTag[] ;
   description?: string;
 };
 

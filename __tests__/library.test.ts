@@ -281,14 +281,14 @@ describe('library data', () => {
       await act(async () => {});
 
       await act(async () => {
-        result.current.setTags(['morning']);
+        result.current.setTags(['Beauty']);
       });
       await act(async () => {});
 
       // The filter is an argument to the query, not something applied after
       // the rows arrive -- that is the whole point of BE-18.
       expect(clipsApi.fetchLibrary).toHaveBeenLastCalledWith(
-        expect.objectContaining({ tags: ['morning'] })
+        expect.objectContaining({ tags: ['Beauty'] })
       );
 
       await act(async () => {
@@ -296,7 +296,7 @@ describe('library data', () => {
       });
       await act(async () => {});
       expect(clipsApi.fetchLibrary).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sort: 'oldest', tags: ['morning'] })
+        expect.objectContaining({ sort: 'oldest', tags: ['Beauty'] })
       );
     });
 
@@ -356,14 +356,14 @@ describe('library data', () => {
       expect(result.current.clips).toHaveLength(2);
 
       await act(async () => {
-        result.current.setTags(['saas']);
+        result.current.setTags(['Beauty']);
       });
       await act(async () => {});
 
       // Keeping page two of the old filter would be showing answers to a
       // question nobody asked.
       const lastCall = clipsApi.fetchLibrary.mock.calls.at(-1)[0];
-      expect(lastCall.tags).toEqual(['saas']);
+      expect(lastCall.tags).toEqual(['Beauty']);
       // No page asked for at all, which is page one.
       expect(lastCall.page ?? 0).toBe(0);
       expect(result.current.clips).toHaveLength(1);
