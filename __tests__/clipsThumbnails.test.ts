@@ -4,6 +4,8 @@
 
 const mockCreateSignedUrls = jest.fn();
 
+const mockAnalysesOr = jest.fn();
+
 jest.mock('expo-file-system', () => ({ File: jest.fn() }));
 
 jest.mock('../lib/supabase', () => {
@@ -12,12 +14,41 @@ jest.mock('../lib/supabase', () => {
     { id: 'c2', thumbnail_path: null, thumbnail_url: null, created_at: '2026-10-02T00:00:00Z' },
     { id: 'c3', thumbnail_path: 'u1/c-thumb.jpg', thumbnail_url: null, created_at: '2026-10-03T00:00:00Z' },
   ];
+
+  const analyses = [
+    {
+      id: 'a-deleted',
+      clip_id: null,
+      payload: { funnelStage: 'BOFU' },
+      created_at: '2026-10-03T00:00:00Z',
+    },
+  ];
   // A query builder whose every method returns itself, and which resolves
   // to `result` when awaited -- the shape supabase-js's builder has.
   const query = (result: unknown) => {
     const q: any = {};
-    for (const m of ['select', 'order', 'range', 'in', 'textSearch', 'contains', 'eq']) q[m] = () => q;
-    q.then = (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve);
+
+    for (const method of [
+      'select',
+      'order',
+      'range',
+      'in',
+      'is',
+      'textSearch',
+      'contains',
+      'eq',
+    ]) {
+      q[method] = () => q;
+    }
+
+    q.or = (...args: unknown[]) => {
+      mockAnalysesOr(...args);
+      return q;
+    };
+
+    q.then = (resolve: (value: unknown) => unknown) =>
+      Promise.resolve(result).then(resolve);
+
     return q;
   };
   return {
@@ -25,7 +56,7 @@ jest.mock('../lib/supabase', () => {
       from: (table: string) =>
         table === 'clips'
           ? query({ data: clips, error: null, count: clips.length })
-          : query({ data: [], error: null }),
+          : query({ data: analyses, error: null }),
       storage: { from: () => ({ createSignedUrls: mockCreateSignedUrls }) },
     },
   };
@@ -34,7 +65,10 @@ jest.mock('../lib/supabase', () => {
 import { fetchLibrary } from '../lib/clips';
 
 describe('thumbnails in fetchLibrary', () => {
-  beforeEach(() => mockCreateSignedUrls.mockReset());
+  beforeEach(() => {
+    mockCreateSignedUrls.mockReset();
+    mockAnalysesOr.mockReset();
+  });
 
   test('signs every thumbnail on the page in one request and fills thumbnail_url', async () => {
     mockCreateSignedUrls.mockResolvedValue({
@@ -60,4 +94,24 @@ describe('thumbnails in fetchLibrary', () => {
     expect(page.clips).toHaveLength(3);
     expect(page.clips.every((c) => c.thumbnail_url === null)).toBe(true);
   });
+});
+
+
+test('loads preserved analyses whose source clips were deleted', async () => {
+  mockCreateSignedUrls.mockResolvedValue({ data: [], error: null });
+
+  const page = await fetchLibrary();
+
+  expect(mockAnalysesOr).toHaveBeenCalledWith(
+    expect.stringContaining('clip_id.is.null')
+  );
+  expect(page.analyses).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: 'a-deleted',
+        clip_id: null,
+        payload: { funnelStage: 'BOFU' },
+      }),
+    ])
+  );
 });
