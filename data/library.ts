@@ -25,7 +25,7 @@ import {
 } from '../lib/clips';
 import { mockAnalyses, mockClips } from './mockVideos';
 import type { Clip, TypedAnalysis } from '../types';
-import type { Tag } from '../lib/clips';
+import type { Tag } from '../types/tag';
 
 export type LibraryState = {
   clips: Clip[];
@@ -134,9 +134,9 @@ export function useLibrary() {
   // because a filter that kept the old page's rows would be showing results
   // from a question nobody asked.
   const [sort, setSortState] = useState<LibrarySort>('newest');
-  const [tags, setTagsState] = useState<string[]>([]);
+  const [tags, setTagsState] = useState<Tag[]>([]);
   const [search, setSearchState] = useState('');
-  const [allTags, setAllTags] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -196,7 +196,7 @@ export function useLibrary() {
   }, [hasMore, loadingMore, page, sort, tags, search]);
 
   const setSort = useCallback((next: LibrarySort) => setSortState(next), []);
-  const setTags = useCallback((next: string[]) => setTagsState(next), []);
+  const setTags = useCallback((next: Tag[]) => setTagsState(next), []);
   const setSearch = useCallback((next: string) => setSearchState(next), []);
 
   useEffect(() => {

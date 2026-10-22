@@ -134,7 +134,7 @@ describe('LibraryScreen', () => {
     expect(empty.queryByText('No videos match your search.')).toBeNull();
     expect(empty.getByText('Add your first videos')).toBeTruthy();
 
-    const filtered = await renderLibrary({ clips: [], analyses: [], tags: ['morning'] });
+    const filtered = await renderLibrary({ clips: [], analyses: [], tags: ['Beauty'] });
     expect(filtered.getByText('No videos match your search.')).toBeTruthy();
   });
 

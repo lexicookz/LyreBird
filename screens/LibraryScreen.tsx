@@ -337,7 +337,7 @@ export default function LibraryScreen({
   /** Current time from the library hook; ticks while clips are analysing. */
   now: number;
   /** Tags currently filtering the query. Applied in Postgres, not here. */
-  tags: string[];
+  tags: Tag[];
   /** Every tag in use, for the filter row. */
   allTags: Tag[];
   onTagsChange: (tags: Tag[]) => void;
