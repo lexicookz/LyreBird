@@ -25,6 +25,7 @@ import {
 } from '../lib/clips';
 import { mockAnalyses, mockClips } from './mockVideos';
 import type { Clip, TypedAnalysis } from '../types';
+import type { Tag } from '../lib/clips';
 
 export type LibraryState = {
   clips: Clip[];

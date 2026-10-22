@@ -24,6 +24,7 @@ import { useTabBarSpace } from '../components/BottomTabBar';
 import { fonts, FUNNEL_ORDER, pagePadding, radius, Colors, useStyles, useTheme } from '../theme';
 import type { Clip, FunnelStage, TypedAnalysis } from '../types';
 import { useFramePreview } from '../lib/framePreview';
+import type { Tag } from '../types/tag';
 
 type StageFilter = 'all' | FunnelStage;
 type SortKey = 'focus' | 'newest' | 'oldest';
@@ -338,8 +339,8 @@ export default function LibraryScreen({
   /** Tags currently filtering the query. Applied in Postgres, not here. */
   tags: string[];
   /** Every tag in use, for the filter row. */
-  allTags: string[];
-  onTagsChange: (tags: string[]) => void;
+  allTags: Tag[];
+  onTagsChange: (tags: Tag[]) => void;
   /** Date ordering is done by the query; 'focus' is a reorder of the page. */
   onSortChange: (sort: 'newest' | 'oldest') => void;
   hasMore: boolean;

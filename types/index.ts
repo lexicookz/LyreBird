@@ -7,6 +7,7 @@
 // and anything wrong here becomes a compile error rather than a runtime one.
 
 import type { Database } from '../supabase/database.types';
+import type { Tag } from './tag';
 
 // ---------- table rows ----------
 
@@ -63,6 +64,7 @@ export type CalendarPlatform = 'tiktok' | 'instagram' | 'youtube' | 'other';
 export type FunnelStage = 'TOFU' | 'MOFU' | 'BOFU';
 export type FormatTag = 'ugc_testimonial' | 'founder_pov' | 'problem_agitate_solve';
 export type VideoFormat = 'talking_head' | 'voiceover' | 'text_overlay' | 'skit' | 'other';
+export type ContentTag = Tag [];
 
 // Declared as a type alias rather than an interface on purpose: interfaces have
 // no implicit index signature, so an interface here would not be assignable to
@@ -97,6 +99,7 @@ export type AnalysisPayload = {
   format: VideoFormat;
   funnelStage: FunnelStage;
   formatTag?: FormatTag | null;
+  tags: ContentTag | null;
   description?: string;
 };
 
