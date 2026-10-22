@@ -136,7 +136,7 @@ function AppContent() {
 
   /** Save the brand on the phone and in Supabase. Resolves to the brand's id, or null. */
   async function persistBrand(setup: BrandSetup): Promise<string | null> {
-    saveBrandSetup(setup).catch(() => { });
+    saveBrandSetup(setup).catch(() => {});
     const userId = await currentUserId();
     if (!userId) return null;
     try {
@@ -204,7 +204,7 @@ function AppContent() {
     setOnboarded(true);
     setStage('done');
     // Not awaited: if the write fails the user just sees onboarding again next launch.
-    completeOnboarding(setup).catch(() => { });
+    completeOnboarding(setup).catch(() => {});
     if (setup) persistBrand(setup);
   }
 
@@ -219,11 +219,11 @@ function AppContent() {
     setPushed(null);
     setActiveTab('library');
     setAccount(null);
-    setBrandSetup(null);
-    setBrandId(null);
-    setBrandError(null);
+    setBrandSetup(null);  
+    setBrandId(null);      
+    setBrandError(null);   
     setStage('login');
-    signOut().catch(() => { });
+    signOut().catch(() => {});
   }
 
   /** Deleting a clip also removes its brief and calendar entry in the database, so refresh both. */
@@ -383,9 +383,9 @@ function AppContent() {
       onSeeBrief={
         schedulingBriefId && !openedFromBrief
           ? () => {
-            setPushed({ type: 'brief', briefId: schedulingBriefId });
-            setSchedulingBriefId(null);
-          }
+              setPushed({ type: 'brief', briefId: schedulingBriefId });
+              setSchedulingBriefId(null);
+            }
           : undefined
       }
     />
