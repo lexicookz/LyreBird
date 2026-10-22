@@ -62,8 +62,8 @@ export type LibraryPage = {
  * rows, and adding one here would suggest the database might hand back
  * someone else's -- which is the thing the policies exist to make impossible.
  *
- * Analyses are fetched for the clips on this page only. Loading all of them
- * to display twenty-four would undo the point of paging.
+ * Analyses are fetched for the clips on this page, plus preserved analyses
+ * whose source clips were deleted. Loading every analysis would undo paging.
  */
 export async function fetchLibrary(query: LibraryQuery = {}): Promise<LibraryPage> {
   const pageSize = query.pageSize ?? LIBRARY_PAGE_SIZE;
@@ -104,15 +104,20 @@ export async function fetchLibrary(query: LibraryQuery = {}): Promise<LibraryPag
   const clips = data ?? [];
   const total = count ?? clips.length;
 
-  if (clips.length === 0) {
-    return { clips: [], analyses: [], hasMore: false, total };
-  }
-
-  const analyses = await supabase
+  let analysesQuery = supabase
     .from('analyses')
     .select('*')
-    .in('clip_id', clips.map((c) => c.id))
     .order('created_at', { ascending: false });
+
+  if (clips.length === 0) {
+    analysesQuery = analysesQuery.is('clip_id', null);
+  } else {
+    analysesQuery = analysesQuery.or(
+      `clip_id.in.(${clips.map((clip) => clip.id).join(',')}),clip_id.is.null`
+    );
+  }
+
+  const analyses = await analysesQuery;
 
   if (analyses.error) throw new Error(`Could not load analyses: ${analyses.error.message}`);
 
